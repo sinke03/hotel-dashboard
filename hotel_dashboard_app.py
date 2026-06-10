@@ -102,17 +102,17 @@ with st.sidebar:
         df_raw = pd.DataFrame({
             'hotel': ['Resort Hotel']*50 + ['City Hotel']*50,
             'is_canceled': [0]*35 + [1]*15 + [0]*30 + [1]*20,
-            'country': (['PRT']*20 + ['GBR']*15 + ['FRA']*10 + ['DEU']*5)*2 + ['ESP']*5 + ['IRL']*5,
+            'country': ['PRT']*20 + ['GBR']*15 + ['FRA']*10 + ['DEU']*10 + ['ESP']*10 + ['IRL']*10 + ['ITA']*15 + ['BEL']*10,
             'arrival_month_name': (['January','February','March','April','May','June','July','August','September','October'] * 10),
             'arrival_year': [2015]*33 + [2016]*34 + [2017]*33,
-            'deposit_type': (['No Deposit']*60 + ['Non Refund']*25 + ['Refundable']*15),
-            'market_segment': (['Online TA']*40 + ['Direct']*25 + ['Corporate']*20 + ['Groups']*15),
-            'customer_type': (['Transient']*60 + ['Contract']*20 + ['Group']*20),
+            'deposit_type': ['No Deposit']*60 + ['Non Refund']*25 + ['Refundable']*15,
+            'market_segment': ['Online TA']*40 + ['Direct']*25 + ['Corporate']*20 + ['Groups']*15,
+            'customer_type': ['Transient']*60 + ['Contract']*20 + ['Group']*20,
             'adr': [75 + i*2 for i in range(100)],
             'estimated_revenue': [100 + i*3 for i in range(100)],
             'total_stay_nights': [2 + (i % 5) for i in range(100)],
             'lead_time': [10 + i*2 for i in range(100)],
-            'season': (['Summer']*25 + ['Spring']*25 + ['Autumn']*25 + ['Winter']*25),
+            'season': ['Summer']*25 + ['Spring']*25 + ['Autumn']*25 + ['Winter']*25,
         })
 
     years = sorted(df_raw['arrival_year'].unique())
