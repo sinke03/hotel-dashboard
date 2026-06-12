@@ -87,6 +87,17 @@ hr { border-color: #1A2A45 !important; }
 
 /* Info/success boxes */
 div[data-testid="stAlert"] { border-radius: 10px !important; }
+
+/* ── Multiselect tag override: blue instead of red ── */
+span[data-baseweb="tag"] {
+    background-color: #1A3A6A !important;
+    border: 1px solid #2A5099 !important;
+}
+span[data-baseweb="tag"] span {
+    color: #7ABAFF !important;
+}
+/* Remove (x) button color */
+span[data-baseweb="tag"] button svg { fill: #7ABAFF !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -111,6 +122,14 @@ CHART_LAYOUT = dict(
     hoverlabel=dict(bgcolor="#0D1628", bordercolor="#1A2A45", font=dict(color="#E0E6F0")),
 )
 
+# ── Safe layout merger (avoids duplicate key TypeError) ───
+def merged_layout(height, **overrides):
+    """Merge CHART_LAYOUT with overrides safely — no duplicate kwargs."""
+    layout = dict(**CHART_LAYOUT)
+    layout.update(overrides)
+    layout['height'] = height
+    return layout
+
 # ── Helpers ───────────────────────────────────────────────
 def get_season(m):
     if m in ['June','July','August']: return '☀️ Summer'
@@ -132,7 +151,7 @@ def process_data(file):
     return df
 
 def chart(fig, height=340):
-    fig.update_layout(**CHART_LAYOUT, height=height)
+    fig.update_layout(**merged_layout(height))
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 # ── Sidebar ───────────────────────────────────────────────
@@ -177,7 +196,6 @@ with st.sidebar:
 
 # ── Main ──────────────────────────────────────────────────
 if df is None:
-    # Landing page
     st.markdown("""
     <div style='text-align:center; padding: 4rem 2rem;'>
         <div style='font-size:64px; margin-bottom:1rem;'>🏨</div>
@@ -187,7 +205,7 @@ if df is None:
         <p style='color:#5577AA; font-size:18px; margin-bottom:2rem;'>
             Upload your hotel data and get instant AI-powered revenue insights
         </p>
-        <div style='display:inline-flex; gap:2rem; justify-content:center; flex-wrap:wrap; margin-bottom:3rem;'>
+    </div>
     """, unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
@@ -210,14 +228,14 @@ if df is None:
     """, unsafe_allow_html=True)
     st.stop()
 
-# ── Dashboard ─────────────────────────────────────────────
-confirmed = df[df['is_canceled']==0]['estimated_revenue'].sum()
-lost      = df[df['is_canceled']==1]['estimated_revenue'].sum()
-total     = len(df)
-cancelled = int(df['is_canceled'].sum())
+# ── Dashboard KPIs ────────────────────────────────────────
+confirmed   = df[df['is_canceled']==0]['estimated_revenue'].sum()
+lost        = df[df['is_canceled']==1]['estimated_revenue'].sum()
+total       = len(df)
+cancelled   = int(df['is_canceled'].sum())
 cancel_rate = cancelled / total * 100 if total > 0 else 0
-avg_adr   = df[df['is_canceled']==0]['adr'].mean() if 'adr' in df.columns else 0
-loss_ratio = lost / confirmed if confirmed > 0 else 0
+avg_adr     = df[df['is_canceled']==0]['adr'].mean() if 'adr' in df.columns else 0
+loss_ratio  = lost / confirmed if confirmed > 0 else 0
 
 st.markdown(f"""
 <div style='margin-bottom:1.5rem;'>
@@ -230,13 +248,12 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ── KPI Row ───────────────────────────────────────────────
 k1, k2, k3, k4, k5 = st.columns(5)
-with k1: st.metric("✅ Confirmed Revenue", f"${confirmed/1e6:.2f}M", f"+${confirmed/1e6*0.08:.1f}M YoY est.")
-with k2: st.metric("❌ Revenue Lost", f"${lost/1e6:.2f}M", f"-{loss_ratio:.0%} loss ratio", delta_color="inverse")
-with k3: st.metric("📉 Cancel Rate", f"{cancel_rate:.1f}%", f"{cancelled:,} bookings", delta_color="inverse")
-with k4: st.metric("💳 Avg Daily Rate", f"${avg_adr:.0f}", "per night")
-with k5: st.metric("📋 Total Bookings", f"{total:,}", f"{total-cancelled:,} confirmed")
+with k1: st.metric("✅ Confirmed Revenue",  f"${confirmed/1e6:.2f}M", f"+${confirmed/1e6*0.08:.1f}M YoY est.")
+with k2: st.metric("❌ Revenue Lost",       f"${lost/1e6:.2f}M",      f"-{loss_ratio:.0%} loss ratio",  delta_color="inverse")
+with k3: st.metric("📉 Cancel Rate",        f"{cancel_rate:.1f}%",    f"{cancelled:,} bookings",        delta_color="inverse")
+with k4: st.metric("💳 Avg Daily Rate",     f"${avg_adr:.0f}",        "per night")
+with k5: st.metric("📋 Total Bookings",     f"{total:,}",             f"{total-cancelled:,} confirmed")
 
 st.markdown("---")
 
@@ -249,34 +266,47 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🎯 Recommendations"
 ])
 
+# ── Month order helper ─────────────────────────────────────
+MONTH_ORDER = ['January','February','March','April','May','June',
+               'July','August','September','October','November','December']
+
 # ════════════════════════════════════════════════════
 # TAB 1 — Revenue Overview
 # ════════════════════════════════════════════════════
 with tab1:
     st.markdown('<div class="section-header">📊 Monthly Revenue Performance</div>', unsafe_allow_html=True)
 
-    month_order = ['January','February','March','April','May','June','July','August','September','October','November','December']
     monthly = []
-    for m in month_order:
+    for m in MONTH_ORDER:
         sub = df[df['arrival_month_name']==m]
         if len(sub) > 0:
             monthly.append({
-                'month': m[:3],
-                'confirmed': sub[sub['is_canceled']==0]['estimated_revenue'].sum()/1e6,
-                'lost': sub[sub['is_canceled']==1]['estimated_revenue'].sum()/1e6,
+                'month':     m[:3],
+                'confirmed': sub[sub['is_canceled']==0]['estimated_revenue'].sum() / 1e6,
+                'lost':      sub[sub['is_canceled']==1]['estimated_revenue'].sum() / 1e6,
             })
     monthly_df = pd.DataFrame(monthly)
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(name='✅ Confirmed', x=monthly_df['month'], y=monthly_df['confirmed'],
-        marker=dict(color=BLUE, opacity=0.9), text=monthly_df['confirmed'].apply(lambda x: f'${x:.2f}M'),
-        textposition='outside', textfont=dict(size=10, color='#8899BB')))
-    fig.add_trace(go.Bar(name='❌ Lost', x=monthly_df['month'], y=monthly_df['lost'],
-        marker=dict(color=RED, opacity=0.8), text=monthly_df['lost'].apply(lambda x: f'${x:.2f}M'),
-        textposition='outside', textfont=dict(size=10, color='#8899BB')))
-    fig.update_layout(barmode='group', **CHART_LAYOUT, height=360,
-        yaxis=dict(tickprefix='$', ticksuffix='M', gridcolor='#1A2A45'),
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1))
+    fig.add_trace(go.Bar(
+        name='✅ Confirmed', x=monthly_df['month'], y=monthly_df['confirmed'],
+        marker=dict(color=BLUE, opacity=0.9),
+        text=monthly_df['confirmed'].apply(lambda x: f'${x:.2f}M'),
+        textposition='outside', textfont=dict(size=10, color='#8899BB')
+    ))
+    fig.add_trace(go.Bar(
+        name='❌ Lost', x=monthly_df['month'], y=monthly_df['lost'],
+        marker=dict(color=RED, opacity=0.8),
+        text=monthly_df['lost'].apply(lambda x: f'${x:.2f}M'),
+        textposition='outside', textfont=dict(size=10, color='#8899BB')
+    ))
+    fig.update_layout(**merged_layout(
+        360,
+        barmode='group',
+        yaxis=dict(tickprefix='$', ticksuffix='M', gridcolor='#1A2A45', showline=False, zeroline=False),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
+                    bgcolor='rgba(0,0,0,0)', bordercolor='#1A2A45', font=dict(color='#8899BB'))
+    ))
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     col1, col2 = st.columns(2)
@@ -285,20 +315,29 @@ with tab1:
         hotel_df = df[df['is_canceled']==0].groupby('hotel')['estimated_revenue'].sum().reset_index()
         fig2 = px.pie(hotel_df, values='estimated_revenue', names='hotel',
             color_discrete_sequence=[BLUE, PURPLE], hole=0.55)
-        fig2.update_traces(textinfo='percent+label', textfont_color='white',
-            marker=dict(line=dict(color='#060B18', width=3)))
+        fig2.update_traces(
+            textinfo='percent+label', textfont_color='white',
+            marker=dict(line=dict(color='#060B18', width=3))
+        )
         chart(fig2, 300)
 
     with col2:
         st.markdown('<div class="section-header">📦 Revenue by Market Segment</div>', unsafe_allow_html=True)
-        seg_df = df[df['is_canceled']==0].groupby('market_segment')['estimated_revenue'].sum().reset_index().sort_values('estimated_revenue')
+        seg_df = (df[df['is_canceled']==0]
+                  .groupby('market_segment')['estimated_revenue']
+                  .sum().reset_index()
+                  .sort_values('estimated_revenue'))
         fig3 = px.bar(seg_df, x='estimated_revenue', y='market_segment', orientation='h',
-            color='estimated_revenue', color_continuous_scale=[[0, '#0D1628'],[1, BLUE]])
-        fig3.update_traces(texttemplate='$%{x:.1f}', textposition='outside',
-            textfont=dict(color='#8899BB', size=11))
-        fig3.update_layout(**CHART_LAYOUT, height=300,
-            xaxis=dict(tickprefix='$', gridcolor='#1A2A45'),
-            coloraxis_showscale=False)
+            color='estimated_revenue', color_continuous_scale=[[0,'#0D1628'],[1,BLUE]])
+        fig3.update_traces(
+            texttemplate='$%{x:.1f}', textposition='outside',
+            textfont=dict(color='#8899BB', size=11)
+        )
+        fig3.update_layout(**merged_layout(
+            300,
+            xaxis=dict(tickprefix='$', gridcolor='#1A2A45', showline=False, zeroline=False),
+            coloraxis_showscale=False
+        ))
         st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
 
 # ════════════════════════════════════════════════════
@@ -331,47 +370,60 @@ with tab2:
         st.markdown('<div class="section-header">💳 Cancellation Rate by Deposit Type</div>', unsafe_allow_html=True)
         dep_df = df.groupby('deposit_type').agg(
             total=('is_canceled','count'),
-            cancelled=('is_canceled','sum'),
-            lost=('estimated_revenue', lambda x: x[df.loc[x.index,'is_canceled']==1].sum()/1e6)
+            cancelled=('is_canceled','sum')
         ).reset_index()
-        dep_df['cancel_rate'] = dep_df['cancelled']/dep_df['total']*100
+        dep_df['cancel_rate'] = dep_df['cancelled'] / dep_df['total'] * 100
         dep_df = dep_df.sort_values('cancel_rate', ascending=True)
 
-        fig = go.Figure()
         colors_dep = [RED if x > 50 else AMBER if x > 25 else GREEN for x in dep_df['cancel_rate']]
+        fig = go.Figure()
         fig.add_trace(go.Bar(
             x=dep_df['cancel_rate'], y=dep_df['deposit_type'], orientation='h',
             marker=dict(color=colors_dep, opacity=0.85),
             text=dep_df['cancel_rate'].apply(lambda x: f'{x:.1f}%'),
             textposition='outside', textfont=dict(color='#E0E6F0', size=12, family='Inter')
         ))
-        fig.update_layout(**CHART_LAYOUT, height=280,
-            xaxis=dict(ticksuffix='%', range=[0,115], gridcolor='#1A2A45'))
+        fig.update_layout(**merged_layout(
+            280,
+            xaxis=dict(ticksuffix='%', range=[0,115], gridcolor='#1A2A45', showline=False, zeroline=False)
+        ))
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         st.caption("⚠️ **Non-refundable ≠ confirmed revenue** — nearly 95% of these cancel!")
 
     with col2:
         st.markdown('<div class="section-header">👥 Cancellation by Customer Type</div>', unsafe_allow_html=True)
         cust_df = df.groupby('customer_type').agg(
-            total=('is_canceled','count'), cancelled=('is_canceled','sum')
+            total=('is_canceled','count'),
+            cancelled=('is_canceled','sum')
         ).reset_index()
-        cust_df['cancel_rate'] = cust_df['cancelled']/cust_df['total']*100
+        cust_df['cancel_rate'] = cust_df['cancelled'] / cust_df['total'] * 100
         fig = px.bar(cust_df, x='customer_type', y='cancel_rate',
             color='cancel_rate', color_continuous_scale=[[0,GREEN],[0.5,AMBER],[1,RED]],
             text=cust_df['cancel_rate'].apply(lambda x: f'{x:.1f}%'))
         fig.update_traces(textposition='outside', textfont=dict(color='#E0E6F0', size=12))
-        fig.update_layout(**CHART_LAYOUT, height=280,
-            yaxis=dict(ticksuffix='%', gridcolor='#1A2A45'), coloraxis_showscale=False)
+        fig.update_layout(**merged_layout(
+            280,
+            yaxis=dict(ticksuffix='%', gridcolor='#1A2A45', showline=False, zeroline=False),
+            coloraxis_showscale=False
+        ))
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     st.markdown('<div class="section-header">📊 Revenue Lost vs Confirmed — Monthly Trend</div>', unsafe_allow_html=True)
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=monthly_df['month'], y=monthly_df['confirmed'], name='✅ Confirmed',
-        fill='tozeroy', fillcolor=f'rgba(74,158,255,0.15)', line=dict(color=BLUE, width=3)))
-    fig.add_trace(go.Scatter(x=monthly_df['month'], y=monthly_df['lost'], name='❌ Lost',
-        fill='tozeroy', fillcolor=f'rgba(255,90,90,0.15)', line=dict(color=RED, width=3, dash='dot')))
-    fig.update_layout(**CHART_LAYOUT, height=280,
-        yaxis=dict(tickprefix='$', ticksuffix='M', gridcolor='#1A2A45'))
+    fig.add_trace(go.Scatter(
+        x=monthly_df['month'], y=monthly_df['confirmed'], name='✅ Confirmed',
+        fill='tozeroy', fillcolor='rgba(74,158,255,0.15)',
+        line=dict(color=BLUE, width=3)
+    ))
+    fig.add_trace(go.Scatter(
+        x=monthly_df['month'], y=monthly_df['lost'], name='❌ Lost',
+        fill='tozeroy', fillcolor='rgba(255,90,90,0.15)',
+        line=dict(color=RED, width=3, dash='dot')
+    ))
+    fig.update_layout(**merged_layout(
+        280,
+        yaxis=dict(tickprefix='$', ticksuffix='M', gridcolor='#1A2A45', showline=False, zeroline=False)
+    ))
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 # ════════════════════════════════════════════════════
@@ -381,47 +433,64 @@ with tab3:
     st.markdown('<div class="section-header">🌍 Top Source Markets — Revenue vs Cancellation Rate</div>', unsafe_allow_html=True)
 
     country_df = df.groupby('country').agg(
-        revenue=('estimated_revenue', lambda x: x[df.loc[x.index,'is_canceled']==0].sum()/1e6),
+        revenue=('estimated_revenue', lambda x: x[df.loc[x.index,'is_canceled']==0].sum() / 1e6),
         total=('is_canceled','count'),
         cancelled=('is_canceled','sum')
     ).reset_index()
-    country_df['cancel_rate'] = country_df['cancelled']/country_df['total']*100
+    country_df['cancel_rate'] = country_df['cancelled'] / country_df['total'] * 100
     country_df = country_df.nlargest(8, 'revenue')
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(go.Bar(name='Revenue ($M)', x=country_df['country'], y=country_df['revenue'],
+    fig.add_trace(go.Bar(
+        name='Revenue ($M)', x=country_df['country'], y=country_df['revenue'],
         marker=dict(color=BLUE, opacity=0.85),
         text=country_df['revenue'].apply(lambda x: f'${x:.2f}M'),
-        textposition='outside', textfont=dict(color='#8899BB', size=11)), secondary_y=False)
-    fig.add_trace(go.Scatter(name='Cancel Rate', x=country_df['country'], y=country_df['cancel_rate'],
+        textposition='outside', textfont=dict(color='#8899BB', size=11)
+    ), secondary_y=False)
+    fig.add_trace(go.Scatter(
+        name='Cancel Rate', x=country_df['country'], y=country_df['cancel_rate'],
         mode='lines+markers+text', line=dict(color=RED, width=3),
         marker=dict(size=10, color=RED, line=dict(color='white', width=2)),
         text=country_df['cancel_rate'].apply(lambda x: f'{x:.1f}%'),
-        textposition='top center', textfont=dict(color=RED, size=11)), secondary_y=True)
-    fig.update_layout(**CHART_LAYOUT, height=380,
-        yaxis=dict(tickprefix='$', ticksuffix='M', gridcolor='#1A2A45'),
-        yaxis2=dict(ticksuffix='%', gridcolor='rgba(0,0,0,0)'))
+        textposition='top center', textfont=dict(color=RED, size=11)
+    ), secondary_y=True)
+    fig.update_layout(**merged_layout(
+        380,
+        yaxis=dict(tickprefix='$', ticksuffix='M', gridcolor='#1A2A45', showline=False, zeroline=False),
+        yaxis2=dict(ticksuffix='%', gridcolor='rgba(0,0,0,0)', showline=False, zeroline=False)
+    ))
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     col1, col2 = st.columns(2)
     with col1:
         st.markdown('<div class="section-header">📡 Distribution Channel</div>', unsafe_allow_html=True)
         if 'distribution_channel' in df.columns:
-            dist_df = df[df['is_canceled']==0].groupby('distribution_channel')['estimated_revenue'].sum().reset_index()
+            dist_df = (df[df['is_canceled']==0]
+                       .groupby('distribution_channel')['estimated_revenue']
+                       .sum().reset_index())
             fig = px.pie(dist_df, values='estimated_revenue', names='distribution_channel',
                 color_discrete_sequence=COLORS, hole=0.5)
-            fig.update_traces(textinfo='percent+label', textfont_color='white',
-                marker=dict(line=dict(color='#060B18', width=3)))
+            fig.update_traces(
+                textinfo='percent+label', textfont_color='white',
+                marker=dict(line=dict(color='#060B18', width=3))
+            )
             chart(fig, 300)
 
     with col2:
         st.markdown('<div class="section-header">🧳 Booking Source Breakdown</div>', unsafe_allow_html=True)
         if 'booking_source' in df.columns:
-            src_df = df[df['is_canceled']==0].groupby('booking_source')['estimated_revenue'].sum().reset_index().sort_values('estimated_revenue', ascending=True).tail(6)
+            src_df = (df[df['is_canceled']==0]
+                      .groupby('booking_source')['estimated_revenue']
+                      .sum().reset_index()
+                      .sort_values('estimated_revenue', ascending=True)
+                      .tail(6))
             fig = px.bar(src_df, x='estimated_revenue', y='booking_source', orientation='h',
                 color='estimated_revenue', color_continuous_scale=[[0,'#0D1628'],[1,CYAN]])
-            fig.update_layout(**CHART_LAYOUT, height=300,
-                xaxis=dict(tickprefix='$', gridcolor='#1A2A45'), coloraxis_showscale=False)
+            fig.update_layout(**merged_layout(
+                300,
+                xaxis=dict(tickprefix='$', gridcolor='#1A2A45', showline=False, zeroline=False),
+                coloraxis_showscale=False
+            ))
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 # ════════════════════════════════════════════════════
@@ -432,24 +501,26 @@ with tab4:
 
     with col1:
         st.markdown('<div class="section-header">🌞 Revenue by Season</div>', unsafe_allow_html=True)
-        season_df = df[df['is_canceled']==0].groupby('season').agg(
-            revenue=('estimated_revenue','sum'),
-            bookings=('is_canceled','count')
-        ).reset_index()
-        season_df['revenue_m'] = season_df['revenue']/1e6
+        season_df = (df[df['is_canceled']==0]
+                     .groupby('season')
+                     .agg(revenue=('estimated_revenue','sum'), bookings=('is_canceled','count'))
+                     .reset_index())
+        season_df['revenue_m'] = season_df['revenue'] / 1e6
         season_colors = {'☀️ Summer': AMBER, '🌸 Spring': GREEN, '🍂 Autumn': CYAN, '❄️ Winter': BLUE}
         fig = px.pie(season_df, values='revenue_m', names='season',
             color='season', color_discrete_map=season_colors, hole=0.55)
-        fig.update_traces(textinfo='percent+label', textfont_color='white',
-            marker=dict(line=dict(color='#060B18', width=3)))
-        fig.update_layout(**CHART_LAYOUT, height=320)
+        fig.update_traces(
+            textinfo='percent+label', textfont_color='white',
+            marker=dict(line=dict(color='#060B18', width=3))
+        )
+        fig.update_layout(**merged_layout(320))
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     with col2:
         st.markdown('<div class="section-header">📊 Season Performance Summary</div>', unsafe_allow_html=True)
         for _, row in season_df.sort_values('revenue_m', ascending=False).iterrows():
-            s = row['season']
-            c = season_colors.get(s, BLUE)
+            s   = row['season']
+            c   = season_colors.get(s, BLUE)
             pct = row['revenue_m'] / season_df['revenue_m'].sum() * 100
             st.markdown(f"""
             <div style='background:linear-gradient(135deg,#0D1628,#0F1A2E);border:1px solid #1A2A45;
@@ -467,20 +538,29 @@ with tab4:
 
     st.markdown('<div class="section-header">📅 ADR vs Arrival Volume by Month</div>', unsafe_allow_html=True)
     if 'adr' in df.columns:
-        adr_df = df[df['is_canceled']==0].groupby('arrival_month_name').agg(
-            avg_adr=('adr','mean'), bookings=('is_canceled','count')
-        ).reindex([m for m in ['January','February','March','April','May','June','July','August','September','October','November','December'] if m in df['arrival_month_name'].values]).reset_index()
+        valid_months = [m for m in MONTH_ORDER if m in df['arrival_month_name'].values]
+        adr_df = (df[df['is_canceled']==0]
+                  .groupby('arrival_month_name')
+                  .agg(avg_adr=('adr','mean'), bookings=('is_canceled','count'))
+                  .reindex(valid_months)
+                  .reset_index())
         adr_df.columns = ['month','avg_adr','bookings']
 
         fig = make_subplots(specs=[[{"secondary_y": True}]])
-        fig.add_trace(go.Bar(name='Bookings Volume', x=adr_df['month'].str[:3], y=adr_df['bookings'],
-            marker=dict(color=BLUE, opacity=0.5)), secondary_y=False)
-        fig.add_trace(go.Scatter(name='Avg Daily Rate', x=adr_df['month'].str[:3], y=adr_df['avg_adr'],
+        fig.add_trace(go.Bar(
+            name='Bookings Volume', x=adr_df['month'].str[:3], y=adr_df['bookings'],
+            marker=dict(color=BLUE, opacity=0.5)
+        ), secondary_y=False)
+        fig.add_trace(go.Scatter(
+            name='Avg Daily Rate', x=adr_df['month'].str[:3], y=adr_df['avg_adr'],
             mode='lines+markers', line=dict(color=AMBER, width=3),
-            marker=dict(size=8, color=AMBER, line=dict(color='white', width=2))), secondary_y=True)
-        fig.update_layout(**CHART_LAYOUT, height=300,
-            yaxis=dict(title='Bookings', gridcolor='#1A2A45'),
-            yaxis2=dict(title='Avg ADR ($)', tickprefix='$', gridcolor='rgba(0,0,0,0)'))
+            marker=dict(size=8, color=AMBER, line=dict(color='white', width=2))
+        ), secondary_y=True)
+        fig.update_layout(**merged_layout(
+            300,
+            yaxis=dict(title='Bookings', gridcolor='#1A2A45', showline=False, zeroline=False),
+            yaxis2=dict(title='Avg ADR ($)', tickprefix='$', gridcolor='rgba(0,0,0,0)', showline=False, zeroline=False)
+        ))
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 # ════════════════════════════════════════════════════
@@ -491,7 +571,7 @@ with tab5:
     <div style='background:linear-gradient(135deg,#0D1628,#0A1A35);border:1px solid #1A2A45;
     border-radius:16px;padding:1.5rem 2rem;margin-bottom:1.5rem;text-align:center;'>
         <p style='font-size:20px;font-weight:600;color:#4A9EFF;font-style:italic;margin-bottom:8px;'>
-            "We are not losing to the market.<br>We are losing to our own decisions & strategy."
+            "We are not losing to the market.<br>We are losing to our own decisions &amp; strategy."
         </p>
         <p style='font-size:13px;color:#5577AA;'>
             A confirmed booking is NOT confirmed revenue &nbsp;·&nbsp;
@@ -532,13 +612,13 @@ with tab5:
     st.markdown('<div class="section-header">📊 Auto-Generated Key Insights</div>', unsafe_allow_html=True)
 
     i1, i2, i3, i4 = st.columns(4)
-    top_country = df[df['is_canceled']==0].groupby('country')['estimated_revenue'].sum().idxmax() if len(df) > 0 else "N/A"
-    best_country = df.groupby('country').apply(lambda x: x['is_canceled'].sum()/len(x)).idxmin() if len(df) > 0 else "N/A"
-    best_season = df[df['is_canceled']==0].groupby('season')['estimated_revenue'].sum().idxmax() if len(df) > 0 else "N/A"
+    top_country   = df[df['is_canceled']==0].groupby('country')['estimated_revenue'].sum().idxmax() if len(df) > 0 else "N/A"
+    best_country  = df.groupby('country').apply(lambda x: x['is_canceled'].sum()/len(x)).idxmin()  if len(df) > 0 else "N/A"
+    best_season   = df[df['is_canceled']==0].groupby('season')['estimated_revenue'].sum().idxmax()  if len(df) > 0 else "N/A"
     worst_deposit = df.groupby('deposit_type').apply(lambda x: x['is_canceled'].sum()/len(x)).idxmax() if len(df) > 0 else "N/A"
 
     for col, icon, label, val, desc in zip(
-        [i1,i2,i3,i4],
+        [i1, i2, i3, i4],
         ["🏆","✅","🌞","⚠️"],
         ["Top Revenue Market","Most Reliable Market","Best Season","Highest Risk Deposit"],
         [top_country, best_country, best_season, worst_deposit],
