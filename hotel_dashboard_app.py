@@ -442,109 +442,140 @@ def guess_column_role(column_name: str, series: pd.Series) -> Tuple[str, str]:
     return "skip", "none"
 
 
-def render_mapping_form(datasets: List[Dict[str, Any]]):
+def raw_upload_signature(uploaded_files) -> str:
+    """Create a lightweight signature before reading file contents."""
+    if not uploaded_files:
+        return ""
+    return "||".join(
+        f"{getattr(file, 'name', '')}|{getattr(file, 'size', 0)}|{getattr(file, 'type', '')}"
+        for file in uploaded_files
+    )
+
+
+def render_upload_confirmation(uploaded_files):
+    """Show uploaded file list first, then ask user to confirm before processing."""
     st.markdown("""
     <div style='margin-bottom:1.5rem;'>
-        <h1 style='color:#FFFFFF;font-size:28px;font-weight:800;margin-bottom:4px;'>🗂️ Confirm Column Meaning</h1>
+        <h1 style='color:#FFFFFF;font-size:28px;font-weight:800;margin-bottom:4px;'>📂 Confirm Uploaded Files</h1>
         <p style='color:#5577AA;font-size:14px;'>
-            The app does not assume your file structure. For each uploaded dataset, confirm what each column means.
-            Columns can be skipped. The analysis will only use the meanings you confirm.
+            The app will only start reading and processing the files after you confirm.
+            Make sure the uploaded files are hospitality-related and the column names are already prepared.
         </p>
     </div>
     """, unsafe_allow_html=True)
 
-    if "working_mappings" not in st.session_state:
-        st.session_state["working_mappings"] = {}
+    rows = []
+    for file in uploaded_files:
+        rows.append({
+            "File name": file.name,
+            "File type": file.type or "Unknown",
+            "Size": f"{getattr(file, 'size', 0) / 1024:,.1f} KB",
+        })
 
-    with st.form("dynamic_mapping_form"):
-        all_mappings = {}
-        duplicate_role_warnings = []
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-        for dataset_idx, item in enumerate(datasets):
-            df = item["data"]
-            dataset_key = item["key"]
-
-            if dataset_key not in st.session_state["working_mappings"]:
-                st.session_state["working_mappings"][dataset_key] = {}
-                for col in df.columns:
-                    guessed_role, _ = guess_column_role(col, df[col])
-                    st.session_state["working_mappings"][dataset_key][col] = guessed_role
-
-            with st.expander(f"📄 {item['name']}  ·  {len(df):,} rows  ·  {len(df.columns)} columns", expanded=(dataset_idx == 0)):
-                st.dataframe(df.head(8), use_container_width=True)
-
-                st.markdown("<div class='section-header'>Column mapping</div>", unsafe_allow_html=True)
-                st.caption("Choose a meaning for each column. Leave unrelated columns as 'Skip / not used'.")
-
-                dataset_mapping = {}
-                used_roles = []
-
-                for col in df.columns:
-                    guessed_role, confidence = guess_column_role(col, df[col])
-                    current_role = st.session_state["working_mappings"][dataset_key].get(col, guessed_role)
-                    current_label = f"{ROLE_LABELS.get(current_role, 'Skip / not used')}  ·  {current_role}"
-                    default_index = ROLE_SELECT_OPTIONS.index(current_label) if current_label in ROLE_SELECT_OPTIONS else 0
-
-                    c1, c2, c3 = st.columns([1.25, 1.5, 1.2])
-                    with c1:
-                        badge = ""
-                        if confidence == "auto" and guessed_role != "skip":
-                            badge = "<span class='auto-badge'>✅ suggested</span>"
-                        elif confidence == "fuzzy" and guessed_role != "skip":
-                            badge = "<span class='manual-badge'>⚠️ verify</span>"
-                        else:
-                            badge = "<span class='skip-badge'>manual</span>"
-                        st.markdown(
-                            f"<div style='padding-top:10px;color:#C8D8F0;font-size:13px;font-weight:600;'>{col}</div>{badge}",
-                            unsafe_allow_html=True,
-                        )
-                    with c2:
-                        selected = st.selectbox(
-                            "Role",
-                            ROLE_SELECT_OPTIONS,
-                            index=default_index,
-                            key=f"role_{dataset_key}_{col}",
-                            label_visibility="collapsed",
-                        )
-                        role_key = ROLE_OPTION_TO_KEY[selected]
-                        st.session_state["working_mappings"][dataset_key][col] = role_key
-                        dataset_mapping[col] = role_key
-                        if role_key != "skip":
-                            used_roles.append(role_key)
-                    with c3:
-                        samples = df[col].dropna().head(3).astype(str).tolist()
-                        sample_text = " · ".join(samples) if samples else "No sample"
-                        st.markdown(
-                            f"<div style='padding-top:10px;color:#5577AA;font-size:11px;'>Sample: {sample_text[:90]}</div>",
-                            unsafe_allow_html=True,
-                        )
-
-                duplicated = sorted({r for r in used_roles if used_roles.count(r) > 1})
-                if duplicated:
-                    duplicate_role_warnings.append(
-                        f"{item['name']}: duplicate mapped roles found ({', '.join(get_role_label(r) for r in duplicated)}). Please map each meaning only once per dataset."
-                    )
-                all_mappings[dataset_key] = dataset_mapping
-
-        st.markdown("---")
-        submitted = st.form_submit_button("✅ Confirm Mapping & Generate Analysis", use_container_width=True, type="primary")
-
-        if submitted:
-            if duplicate_role_warnings:
-                for warning in duplicate_role_warnings:
-                    st.error(warning)
-                st.stop()
-            total_mapped = sum(
-                1 for mapping in all_mappings.values() for role in mapping.values() if role != "skip"
-            )
-            if total_mapped == 0:
-                st.warning("Please map at least one column meaning before generating the dashboard.")
-                st.stop()
-            st.session_state["confirmed_mappings"] = all_mappings
-            st.session_state["mapping_confirmed"] = True
-            st.rerun()
+    st.info("After confirmation, the app will process the files and show a column preview for your final check.")
+    if st.button("✅ Confirm Uploaded Files", use_container_width=True, type="primary"):
+        st.session_state["upload_confirmed"] = True
+        st.session_state["columns_confirmed"] = False
+        st.session_state.pop("confirmed_mappings", None)
+        st.rerun()
 
     st.stop()
+
+
+def build_auto_mappings(datasets: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
+    """
+    Automatically detect the meaning of each column based only on the uploaded column names and values.
+    Users do not manually map or rename inside the app.
+    """
+    all_mappings = {}
+
+    for item in datasets:
+        df = item["data"]
+        dataset_mapping = {}
+        used_roles = set()
+
+        for col in df.columns:
+            guessed_role, confidence = guess_column_role(col, df[col])
+
+            # Keep only one column per role per dataset to prevent accidental overwriting.
+            # If a duplicate role is detected, the later column is skipped.
+            if guessed_role != "skip" and guessed_role in used_roles:
+                dataset_mapping[col] = "skip"
+                continue
+
+            dataset_mapping[col] = guessed_role
+            if guessed_role != "skip":
+                used_roles.add(guessed_role)
+
+        all_mappings[item["key"]] = dataset_mapping
+
+    return all_mappings
+
+
+def render_column_preview_confirmation(datasets: List[Dict[str, Any]], auto_mappings: Dict[str, Dict[str, str]]):
+    """
+    Preview uploaded data and detected column meanings.
+    No manual column mapping is shown; users only confirm that their uploaded column names are correct.
+    """
+    st.markdown("""
+    <div style='margin-bottom:1.5rem;'>
+        <h1 style='color:#FFFFFF;font-size:28px;font-weight:800;margin-bottom:4px;'>🗂️ Preview Data Columns</h1>
+        <p style='color:#5577AA;font-size:14px;'>
+            Check the uploaded columns below. The app will analyse the data using the detected hospitality meanings.
+            If something looks wrong, rename the column in your file and upload again.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    total_detected = 0
+
+    for dataset_idx, item in enumerate(datasets):
+        df = item["data"]
+        mapping = auto_mappings.get(item["key"], {})
+
+        with st.expander(f"📄 {item['name']}  ·  {len(df):,} rows  ·  {len(df.columns)} columns", expanded=(dataset_idx == 0)):
+            st.markdown("<div class='section-header'>Data preview</div>", unsafe_allow_html=True)
+            st.dataframe(df.head(8), use_container_width=True)
+
+            st.markdown("<div class='section-header'>Column preview</div>", unsafe_allow_html=True)
+            column_rows = []
+            for col in df.columns:
+                guessed_role, confidence = guess_column_role(col, df[col])
+                final_role = mapping.get(col, "skip")
+                if final_role != "skip":
+                    total_detected += 1
+
+                samples = df[col].dropna().head(3).astype(str).tolist()
+                sample_text = " · ".join(samples) if samples else "No sample"
+
+                column_rows.append({
+                    "Column name": col,
+                    "Detected meaning": get_role_label(final_role) if final_role != "skip" else "Not used / not recognised",
+                    "Status": "Suggested" if final_role != "skip" and confidence in ["auto", "fuzzy"] else "Ignored",
+                    "Sample values": sample_text[:120],
+                })
+
+            st.dataframe(pd.DataFrame(column_rows), use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    if total_detected == 0:
+        st.error(
+            "No hospitality-related columns were recognised. Please rename the columns in your file "
+            "using clearer names such as date, revenue, ADR, bookings, channel, country, occupancy, rating, or demand, then upload again."
+        )
+        st.stop()
+
+    st.success(f"✅ {total_detected} column meaning{'s' if total_detected != 1 else ''} detected across the uploaded data.")
+
+    if st.button("✅ Confirm Columns & Generate Analysis", use_container_width=True, type="primary"):
+        st.session_state["confirmed_mappings"] = auto_mappings
+        st.session_state["columns_confirmed"] = True
+        st.rerun()
+
+    st.stop()
+
 
 # ==========================================================
 # DATA NORMALISATION BASED ON USER-CONFIRMED ROLES
@@ -1186,8 +1217,22 @@ if not uploaded_files:
     render_landing()
     st.stop()
 
-# Read user-uploaded files only
-datasets, load_errors = load_all_uploaded_files(uploaded_files)
+# Reset confirmation steps whenever the uploaded file set changes.
+upload_signature = raw_upload_signature(uploaded_files)
+if st.session_state.get("upload_signature") != upload_signature:
+    st.session_state["upload_signature"] = upload_signature
+    st.session_state["upload_confirmed"] = False
+    st.session_state["columns_confirmed"] = False
+    st.session_state.pop("confirmed_mappings", None)
+
+# Step 1: user confirms uploaded files before the app reads/processes them.
+if not st.session_state.get("upload_confirmed", False):
+    render_upload_confirmation(uploaded_files)
+
+# Step 2: read and process user-uploaded files only, with visible loading feedback.
+with st.spinner("⏳ Processing uploaded files... please wait."):
+    datasets, load_errors = load_all_uploaded_files(uploaded_files)
+
 if load_errors:
     for err in load_errors:
         st.sidebar.warning(err)
@@ -1197,13 +1242,12 @@ if not datasets:
     st.warning("No valid data was loaded. Please upload CSV, XLSX, or XLS files.")
     st.stop()
 
-# Reset mapping if the uploaded data changes
+# Reset column confirmation if file content/columns changed after processing.
 current_signature = file_signature(datasets)
 if st.session_state.get("file_signature") != current_signature:
     st.session_state["file_signature"] = current_signature
-    st.session_state["mapping_confirmed"] = False
+    st.session_state["columns_confirmed"] = False
     st.session_state.pop("confirmed_mappings", None)
-    st.session_state.pop("working_mappings", None)
 
 with st.sidebar:
     st.markdown("---")
@@ -1212,20 +1256,24 @@ with st.sidebar:
         st.markdown(f"<span class='file-badge'>📄 {item['name']}</span>", unsafe_allow_html=True)
     st.success(f"{len(datasets)} dataset{'s' if len(datasets) != 1 else ''} loaded")
 
-    if st.button("🗂️ Re-confirm Column Meanings", use_container_width=True):
-        st.session_state["mapping_confirmed"] = False
+    if st.button("🔄 Re-check Uploaded Columns", use_container_width=True):
+        st.session_state["columns_confirmed"] = False
         st.session_state.pop("confirmed_mappings", None)
         st.rerun()
 
-# Mapping screen before any analysis
-if not st.session_state.get("mapping_confirmed", False):
-    render_mapping_form(datasets)
+# Step 3: preview columns only. No manual mapping or column fixing inside the app.
+auto_mappings = build_auto_mappings(datasets)
+if not st.session_state.get("columns_confirmed", False):
+    render_column_preview_confirmation(datasets, auto_mappings)
 
-mappings = st.session_state.get("confirmed_mappings", {})
-std = build_standardised_data(datasets, mappings)
+mappings = st.session_state.get("confirmed_mappings", auto_mappings)
+
+# Step 4: build standardised analysis data with loading feedback.
+with st.spinner("📊 Generating dynamic hospitality analysis..."):
+    std = build_standardised_data(datasets, mappings)
 
 if std.empty:
-    st.warning("No data available after applying your mapping.")
+    st.warning("No data available after processing your uploaded files.")
     st.stop()
 
 # Sidebar filters, generated only from available mapped roles
