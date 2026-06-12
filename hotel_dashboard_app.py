@@ -1196,6 +1196,337 @@ def render_insights(std: pd.DataFrame):
         </div>
         """, unsafe_allow_html=True)
 
+
+# ==========================================================
+# MORE ADAPTIVE DATASET-BASED ANALYSIS
+# ==========================================================
+def get_raw_column_types(df: pd.DataFrame) -> Dict[str, List[str]]:
+    """Detect usable column groups directly from the uploaded data, not only from mapped roles."""
+    numeric_cols, date_cols, categorical_cols = [], [], []
+    for col in df.columns:
+        s = df[col]
+        if s.dropna().empty:
+            continue
+        numeric = to_number(s)
+        numeric_ratio = numeric.notna().mean()
+        parsed_date = pd.to_datetime(s, errors="coerce")
+        date_ratio = parsed_date.notna().mean()
+        unique_count = s.nunique(dropna=True)
+        non_null = int(s.notna().sum())
+
+        if date_ratio >= 0.70 and unique_count > 1:
+            date_cols.append(col)
+        elif numeric_ratio >= 0.70:
+            numeric_cols.append(col)
+        elif unique_count <= min(80, max(20, non_null * 0.30)):
+            categorical_cols.append(col)
+    return {"numeric": numeric_cols, "date": date_cols, "categorical": categorical_cols}
+
+
+def get_detected_role_columns(mapping: Dict[str, str]) -> Dict[str, str]:
+    """Convert mapping from raw column -> role into role -> raw column for display."""
+    role_cols = {}
+    for raw_col, role in mapping.items():
+        if role != "skip" and role not in role_cols:
+            role_cols[role] = raw_col
+    return role_cols
+
+
+def readable_dataset_name(name: str, max_len: int = 24) -> str:
+    name = str(name)
+    return name if len(name) <= max_len else name[:max_len-3] + "..."
+
+
+def render_adaptive_dataset_profile(item: Dict[str, Any], mapping: Dict[str, str]):
+    df = item["data"].copy()
+    col_types = get_raw_column_types(df)
+    role_cols = get_detected_role_columns(mapping)
+
+    st.markdown(f"<div class='section-header'>🧠 Analysis plan for {item['name']}</div>", unsafe_allow_html=True)
+    plan_rows = []
+    if col_types["date"]:
+        plan_rows.append({"Detected data feature": "Date/time columns", "What the app will analyse": "Time trend, seasonality, month-by-month movement", "Columns used": ", ".join(map(str, col_types["date"][:5]))})
+    if col_types["numeric"]:
+        plan_rows.append({"Detected data feature": "Numeric columns", "What the app will analyse": "KPI totals, averages, distribution, ranking, correlation", "Columns used": ", ".join(map(str, col_types["numeric"][:8]))})
+    if col_types["categorical"]:
+        plan_rows.append({"Detected data feature": "Categorical columns", "What the app will analyse": "Top categories, contribution mix, segment comparison", "Columns used": ", ".join(map(str, col_types["categorical"][:8]))})
+    if role_cols:
+        plan_rows.append({"Detected data feature": "Hospitality meanings", "What the app will analyse": "Hospitality-specific revenue, pricing, risk or demand logic", "Columns used": ", ".join(f"{get_role_label(r)} = {c}" for r, c in list(role_cols.items())[:8])})
+    if plan_rows:
+        st.dataframe(pd.DataFrame(plan_rows), use_container_width=True, hide_index=True)
+    else:
+        st.warning("The app could not confidently detect numeric/date/category patterns. It will show profiling only.")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Rows", f"{len(df):,}")
+    c2.metric("Columns", f"{len(df.columns):,}")
+    c3.metric("Numeric fields", f"{len(col_types['numeric']):,}")
+    c4.metric("Category fields", f"{len(col_types['categorical']):,}")
+
+    with st.expander("👀 Raw data preview", expanded=False):
+        st.dataframe(df.head(50), use_container_width=True)
+
+    return col_types, role_cols
+
+
+def render_adaptive_time_analysis(df: pd.DataFrame, col_types: Dict[str, List[str]], role_cols: Dict[str, str], dataset_key: str):
+    if not col_types["date"]:
+        return
+    numeric_cols = col_types["numeric"]
+    if not numeric_cols:
+        return
+
+    st.markdown("<div class='section-header'>📅 Time movement based on uploaded date columns</div>", unsafe_allow_html=True)
+    default_date = role_cols.get("date") if role_cols.get("date") in col_types["date"] else col_types["date"][0]
+    default_metric = None
+    for preferred_role in ["revenue", "adr", "bookings", "demand", "occupancy_rate", "rating", "cost", "profit"]:
+        candidate = role_cols.get(preferred_role)
+        if candidate in numeric_cols:
+            default_metric = candidate
+            break
+    if default_metric is None:
+        default_metric = numeric_cols[0]
+
+    date_col = st.selectbox("Date column", col_types["date"], index=col_types["date"].index(default_date), key=f"adaptive_date_{dataset_key}")
+    metric_col = st.selectbox("Metric to trend", numeric_cols, index=numeric_cols.index(default_metric), key=f"adaptive_metric_time_{dataset_key}")
+
+    temp = df[[date_col, metric_col]].copy()
+    temp[date_col] = pd.to_datetime(temp[date_col], errors="coerce")
+    temp[metric_col] = to_number(temp[metric_col])
+    temp = temp.dropna(subset=[date_col, metric_col])
+    if temp.empty:
+        st.info("No valid date + metric values available for trend analysis.")
+        return
+    temp["period"] = temp[date_col].dt.to_period("M").dt.to_timestamp()
+    monthly = temp.groupby("period", as_index=False)[metric_col].sum()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=monthly["period"], y=monthly[metric_col], mode="lines+markers", line=dict(color=BLUE, width=3), marker=dict(size=8)))
+    yaxis = dict(tickprefix="$", gridcolor="#1A2A45") if any(word in norm_text(metric_col) for word in ["revenue", "sales", "amount", "rate", "price", "adr", "cost", "profit"]) else dict(gridcolor="#1A2A45")
+    fig.update_layout(**merged_layout(380, yaxis=yaxis))
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    # Auto insight based on actual chosen metric
+    if len(monthly) >= 2:
+        peak = monthly.loc[monthly[metric_col].idxmax()]
+        low = monthly.loc[monthly[metric_col].idxmin()]
+        st.markdown(f"""
+        <div class='insight-card'>
+            <div class='insight-title'>Time trend insight</div>
+            <div class='insight-desc' style='font-size:13px;color:#C8D8F0;'>
+                <strong>{metric_col}</strong> peaks in <strong>{peak['period'].strftime('%b %Y')}</strong> and is lowest in <strong>{low['period'].strftime('%b %Y')}</strong>.
+                This is generated from the uploaded column <strong>{date_col}</strong>, not from a fixed template.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+def render_adaptive_category_analysis(df: pd.DataFrame, col_types: Dict[str, List[str]], role_cols: Dict[str, str], dataset_key: str):
+    if not col_types["categorical"]:
+        return
+    st.markdown("<div class='section-header'>🧩 Category contribution based on uploaded category columns</div>", unsafe_allow_html=True)
+
+    numeric_cols = col_types["numeric"]
+    default_cat = None
+    for preferred_role in ["property", "country", "segment", "channel", "customer_type", "room_type", "event_name"]:
+        candidate = role_cols.get(preferred_role)
+        if candidate in col_types["categorical"]:
+            default_cat = candidate
+            break
+    if default_cat is None:
+        default_cat = col_types["categorical"][0]
+
+    cat_col = st.selectbox("Category to analyse", col_types["categorical"], index=col_types["categorical"].index(default_cat), key=f"adaptive_cat_{dataset_key}")
+
+    if numeric_cols:
+        default_metric = None
+        for preferred_role in ["revenue", "adr", "bookings", "demand", "occupancy_rate", "rating", "cost", "profit", "guests"]:
+            candidate = role_cols.get(preferred_role)
+            if candidate in numeric_cols:
+                default_metric = candidate
+                break
+        if default_metric is None:
+            default_metric = numeric_cols[0]
+        metric_col = st.selectbox("Metric for category comparison", numeric_cols, index=numeric_cols.index(default_metric), key=f"adaptive_metric_cat_{dataset_key}")
+        temp = df[[cat_col, metric_col]].copy()
+        temp[metric_col] = to_number(temp[metric_col])
+        temp = temp.dropna(subset=[cat_col, metric_col])
+        if temp.empty:
+            st.info("No valid category + metric values available.")
+            return
+        grouped = temp.groupby(cat_col, dropna=False)[metric_col].sum().reset_index().sort_values(metric_col, ascending=True).tail(15)
+        fig = px.bar(grouped, x=metric_col, y=cat_col, orientation="h", color=metric_col, color_continuous_scale=[[0, "#0D1628"], [1, BLUE]])
+        fig.update_layout(**merged_layout(430, coloraxis_showscale=False))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+        top = grouped.sort_values(metric_col, ascending=False).iloc[0]
+        total = grouped[metric_col].sum()
+        share = safe_div(top[metric_col], total) * 100 if total else np.nan
+        st.markdown(f"""
+        <div class='insight-card'>
+            <div class='insight-title'>Category insight</div>
+            <div class='insight-desc' style='font-size:13px;color:#C8D8F0;'>
+                <strong>{top[cat_col]}</strong> is the strongest category for <strong>{metric_col}</strong>
+                {f'with {pct(share)} of the displayed top-category total' if not pd.isna(share) else ''}.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        counts = df[cat_col].dropna().astype(str).value_counts().head(15).reset_index()
+        counts.columns = [cat_col, "rows"]
+        fig = px.bar(counts.sort_values("rows"), x="rows", y=cat_col, orientation="h", color="rows", color_continuous_scale=[[0, "#0D1628"], [1, CYAN]])
+        fig.update_layout(**merged_layout(430, coloraxis_showscale=False))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+
+def render_adaptive_numeric_analysis(df: pd.DataFrame, col_types: Dict[str, List[str]], role_cols: Dict[str, str], dataset_key: str):
+    if not col_types["numeric"]:
+        return
+    st.markdown("<div class='section-header'>📊 Numeric profile from uploaded measures</div>", unsafe_allow_html=True)
+    numeric_cols = col_types["numeric"]
+    profile_rows = []
+    for col in numeric_cols[:20]:
+        s = to_number(df[col])
+        if s.notna().any():
+            profile_rows.append({
+                "Column": col,
+                "Total": short_num(s.sum(skipna=True)),
+                "Average": short_num(s.mean(skipna=True)),
+                "Median": short_num(s.median(skipna=True)),
+                "Min": short_num(s.min(skipna=True)),
+                "Max": short_num(s.max(skipna=True)),
+                "Missing %": f"{s.isna().mean()*100:.1f}%",
+            })
+    if profile_rows:
+        st.dataframe(pd.DataFrame(profile_rows), use_container_width=True, hide_index=True)
+
+    selected_num = st.selectbox("View distribution for", numeric_cols, key=f"adaptive_dist_{dataset_key}")
+    s = to_number(df[selected_num]).dropna()
+    if not s.empty:
+        fig = px.histogram(s.to_frame(name=selected_num), x=selected_num, nbins=30)
+        fig.update_layout(**merged_layout(330, yaxis=dict(gridcolor="#1A2A45")))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    if len(numeric_cols) >= 2:
+        st.markdown("<div class='section-header'>🔗 Relationship between numeric columns</div>", unsafe_allow_html=True)
+        corr_df = pd.DataFrame({col: to_number(df[col]) for col in numeric_cols[:12]}).dropna(how="all")
+        corr = corr_df.corr(numeric_only=True)
+        if not corr.empty:
+            fig = px.imshow(corr, text_auto='.2f', aspect="auto", color_continuous_scale="RdBu", zmin=-1, zmax=1)
+            fig.update_layout(**merged_layout(430))
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+
+def render_hospitality_specific_analysis(df: pd.DataFrame, role_cols: Dict[str, str], dataset_key: str):
+    """Only appears when hospitality meanings are detected. Content changes based on available roles."""
+    available_roles = set(role_cols.keys())
+    if not available_roles:
+        return
+
+    sections = []
+    if {"revenue", "adr"} & available_roles:
+        sections.append("commercial performance")
+    if "cancellation" in available_roles:
+        sections.append("booking risk")
+    if {"country", "segment", "channel", "customer_type", "property", "room_type"} & available_roles:
+        sections.append("market/category mix")
+    if {"demand", "event_date", "event_name"} & available_roles:
+        sections.append("demand/event signal")
+    if {"rating", "guests", "occupancy_rate"} & available_roles:
+        sections.append("guest/operation signal")
+    if not sections:
+        return
+
+    st.markdown("<div class='section-header'>🏨 Hospitality-specific interpretation</div>", unsafe_allow_html=True)
+    st.caption("This section is generated only from hospitality meanings detected in the uploaded columns.")
+
+    cards = []
+    if "revenue" in role_cols:
+        revenue_col = role_cols["revenue"]
+        revenue = to_number(df[revenue_col]).sum(skipna=True)
+        cards.append((BLUE, "Revenue detected", f"The file contains a revenue-like column <strong>{revenue_col}</strong> with total value <strong>{money(revenue)}</strong>."))
+    if "adr" in role_cols:
+        adr_col = role_cols["adr"]
+        avg_adr = to_number(df[adr_col]).mean(skipna=True)
+        cards.append((AMBER, "Rate / ADR detected", f"Average value of <strong>{adr_col}</strong> is <strong>${avg_adr:,.0f}</strong>, useful for pricing and rate comparison."))
+    if "cancellation" in role_cols:
+        can_col = role_cols["cancellation"]
+        flags = normalize_cancel_flag(df[can_col])
+        cards.append((RED if flags.mean() >= 0.30 else GREEN, "Cancellation signal", f"Column <strong>{can_col}</strong> suggests a cancellation/no-show rate of <strong>{pct(flags.mean()*100)}</strong>."))
+    if "demand" in role_cols:
+        demand_col = role_cols["demand"]
+        demand = to_number(df[demand_col]).sum(skipna=True)
+        cards.append((CYAN, "Demand signal", f"Column <strong>{demand_col}</strong> provides demand/visitor volume with total <strong>{short_num(demand)}</strong>."))
+    if "rating" in role_cols:
+        rating_col = role_cols["rating"]
+        avg_rating = to_number(df[rating_col]).mean(skipna=True)
+        cards.append((PURPLE, "Guest experience signal", f"Column <strong>{rating_col}</strong> has average score <strong>{avg_rating:,.2f}</strong>, useful for service quality analysis."))
+
+    for color, title, desc in cards:
+        st.markdown(f"""
+        <div class='insight-card' style='border-left:4px solid {color};'>
+            <div class='insight-title'>{title}</div>
+            <div class='insight-desc' style='font-size:13px;color:#C8D8F0;'>{desc}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+def render_dataset_adaptive_analysis(item: Dict[str, Any], mappings: Dict[str, Dict[str, str]]):
+    """One genuinely adaptive analysis page per uploaded dataset."""
+    df = item["data"].copy()
+    mapping = mappings.get(item["key"], {})
+    col_types, role_cols = render_adaptive_dataset_profile(item, mapping)
+
+    render_hospitality_specific_analysis(df, role_cols, item["key"])
+    render_adaptive_time_analysis(df, col_types, role_cols, item["key"])
+    render_adaptive_category_analysis(df, col_types, role_cols, item["key"])
+    render_adaptive_numeric_analysis(df, col_types, role_cols, item["key"])
+
+    st.markdown("<div class='section-header'>🧪 Data quality based on this file</div>", unsafe_allow_html=True)
+    missing = df.isna().mean().mul(100).sort_values(ascending=False).reset_index()
+    missing.columns = ["Column", "Missing %"]
+    missing = missing[missing["Missing %"] > 0].head(20)
+    if not missing.empty:
+        fig = px.bar(missing.sort_values("Missing %"), x="Missing %", y="Column", orientation="h", color="Missing %", color_continuous_scale=[[0, GREEN], [1, RED]])
+        fig.update_layout(**merged_layout(360, xaxis=dict(ticksuffix="%", gridcolor="#1A2A45"), coloraxis_showscale=False))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    else:
+        st.success("No missing values detected in this dataset.")
+
+
+def render_cross_dataset_adaptive_analysis(std: pd.DataFrame, datasets: List[Dict[str, Any]], mappings: Dict[str, Dict[str, str]]):
+    st.markdown("<div class='section-header'>🔗 Cross-dataset adaptive comparison</div>", unsafe_allow_html=True)
+    st.caption("This page compares only metrics that are actually detected across the uploaded files.")
+
+    rows = []
+    for item in datasets:
+        subset = std[std["_source_dataset"].eq(item["name"])]
+        mapping = mappings.get(item["key"], {})
+        role_cols = get_detected_role_columns(mapping)
+        row = {
+            "Dataset": item["name"],
+            "Rows": len(subset),
+            "Detected type": subset["_dataset_type"].iloc[0] if not subset.empty and "_dataset_type" in subset.columns else "Unknown",
+            "Detected meanings": ", ".join(get_role_label(r) for r in role_cols.keys()) or "No recognised hospitality meaning",
+        }
+        for metric in ["revenue", "adr", "bookings", "demand", "rating", "occupancy_rate", "cost", "profit"]:
+            if metric in subset.columns and subset[metric].notna().any():
+                if metric in ["adr", "rating", "occupancy_rate"]:
+                    row[get_role_label(metric)] = subset[metric].mean(skipna=True)
+                else:
+                    row[get_role_label(metric)] = subset[metric].sum(skipna=True)
+        rows.append(row)
+    compare = pd.DataFrame(rows)
+    st.dataframe(compare, use_container_width=True, hide_index=True)
+
+    numeric_compare_cols = [c for c in compare.columns if c not in ["Dataset", "Detected type", "Detected meanings"] and pd.api.types.is_numeric_dtype(compare[c])]
+    if numeric_compare_cols:
+        metric = st.selectbox("Choose detected cross-dataset metric", numeric_compare_cols, key="cross_dataset_metric")
+        fig = px.bar(compare, x="Dataset", y=metric, color=metric, color_continuous_scale=[[0, "#0D1628"], [1, BLUE]])
+        fig.update_layout(**merged_layout(380, coloraxis_showscale=False))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    else:
+        st.info("No common numeric hospitality metrics were detected for cross-dataset comparison.")
+
 # ==========================================================
 # SIDEBAR + APP FLOW
 # ==========================================================
@@ -1311,26 +1642,19 @@ if filtered.empty:
 render_header(filtered, datasets, mappings)
 st.markdown("---")
 
-# Create tabs only when relevant
+# Create tabs from the uploaded datasets, not from a fixed analysis template.
 modules = [("📁 Overview", lambda: render_overview(filtered, datasets))]
 
-if filtered["analysis_date"].notna().any() or ("year" in filtered.columns and "month" in filtered.columns):
-    modules.append(("📅 Trends", lambda: render_time_trends(filtered)))
+for item in datasets:
+    title = "📄 " + readable_dataset_name(item["name"], 20)
+    modules.append((title, lambda item=item: render_dataset_adaptive_analysis(item, mappings)))
 
-if any(c in filtered.columns and filtered[c].notna().any() for c in ["revenue", "adr", "profit", "cost"]):
-    modules.append(("💰 Commercial", lambda: render_revenue_pricing(filtered)))
+if len(datasets) > 1:
+    modules.append(("🔗 Cross-Dataset", lambda: render_cross_dataset_adaptive_analysis(filtered, datasets, mappings)))
 
-if "cancelled_flag" in filtered.columns and filtered["cancelled_flag"].notna().any():
-    modules.append(("📉 Risk", lambda: render_booking_risk(filtered)))
-
-if any(c in filtered.columns and filtered[c].notna().any() for c in ["property", "country", "segment", "channel", "customer_type", "room_type"]):
-    modules.append(("🌍 Categories", lambda: render_market_guest(filtered)))
-
-if any(c in filtered.columns and filtered[c].notna().any() for c in ["demand", "event_date", "event_name"]):
-    modules.append(("📊 Signals", lambda: render_demand_events(filtered)))
-
+# These final two are still dynamic because they are generated from the mapped/detected columns.
+modules.append(("💡 Smart Insights", lambda: render_insights(filtered)))
 modules.append(("🧪 Data Quality", lambda: render_data_quality(filtered, datasets)))
-modules.append(("💡 Insights", lambda: render_insights(filtered)))
 
 tabs = st.tabs([title for title, _ in modules])
 for tab, (_, render_func) in zip(tabs, modules):
