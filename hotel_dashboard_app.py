@@ -149,10 +149,65 @@ def chart(fig, height=340):
 
 def get_season(m):
     if pd.isna(m): return "Unknown"
+    m = str(m).strip()
     if m in ['June','July','August']: return '☀️ Summer'
     elif m in ['March','April','May']: return '🌸 Spring'
     elif m in ['September','October','November']: return '🍂 Autumn'
-    else: return '❄️ Winter'
+    elif m in ['December','January','February']: return '❄️ Winter'
+    return "Unknown"
+
+
+def month_to_number(value):
+    """Convert month names/abbreviations/numbers to month number 1-12."""
+    if pd.isna(value):
+        return np.nan
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        month_num = int(value) if 1 <= int(value) <= 12 else np.nan
+        return month_num
+    text = str(value).strip()
+    if text.isdigit():
+        month_num = int(text)
+        return month_num if 1 <= month_num <= 12 else np.nan
+    lookup = {m.lower(): i for i, m in enumerate(MONTH_ORDER, start=1)}
+    lookup.update({m[:3].lower(): i for i, m in enumerate(MONTH_ORDER, start=1)})
+    return lookup.get(text.lower()[:3], lookup.get(text.lower(), np.nan))
+
+
+def month_number_to_name(value):
+    try:
+        value = int(value)
+        if 1 <= value <= 12:
+            return MONTH_ORDER[value - 1]
+    except Exception:
+        pass
+    return np.nan
+
+
+def normalize_cancel_flag(series):
+    """Normalise cancellation/status columns into 1 = cancelled, 0 = not cancelled."""
+    numeric = pd.to_numeric(series, errors='coerce')
+    if numeric.notna().mean() >= 0.70:
+        return (numeric.fillna(0) > 0).astype(int)
+
+    text = series.astype(str).str.strip().str.lower()
+    positive_not_cancelled = text.str.contains(
+        r'not cancelled|not canceled|not cancel|no cancellation|confirmed|active|booked|checked.?in|stayed',
+        regex=True, na=False
+    )
+    cancelled = text.str.contains(
+        r'cancelled|canceled|cancel|no.?show|noshow',
+        regex=True, na=False
+    ) & ~positive_not_cancelled
+    return cancelled.astype(int)
+
+
+def normalize_bool_flag(series):
+    """Normalise yes/no, true/false, 1/0 fields into boolean."""
+    numeric = pd.to_numeric(series, errors='coerce')
+    if numeric.notna().mean() >= 0.70:
+        return numeric.fillna(0).astype(float).gt(0)
+    text = series.astype(str).str.strip().str.lower()
+    return text.isin(['1', 'yes', 'y', 'true', 't', 'long weekend', 'regional'])
 
 def money_m(x):
     if pd.isna(x): return "$0.00M"
@@ -174,12 +229,20 @@ def read_default_excel(path):
         return pd.read_excel(path)
     return None
 
-def load_dataset(uploaded_file, default_path):
+def load_dataset(uploaded_file, default_path=None):
+    """
+    Load a dataset from the uploader.
+    File names are NOT fixed; users upload files by data type.
+    default_path is optional and only used if you want to support local demo files.
+    """
     if uploaded_file is not None:
         return read_any_file(uploaded_file.getvalue(), uploaded_file.name), uploaded_file.name
-    default_df = read_default_excel(default_path)
-    if default_df is not None:
-        return default_df, default_path
+
+    if default_path:
+        default_df = read_default_excel(default_path)
+        if default_df is not None:
+            return default_df, default_path
+
     return None, None
 
 # ==========================================================
@@ -413,19 +476,40 @@ def apply_holidays_mapping(df_raw, mapping):
 def prepare_hotel_data(df):
     df = df.copy()
 
+    # Arrival date / month / year
     if 'arrival_date' in df.columns:
         df['arrival_date'] = pd.to_datetime(df['arrival_date'], errors='coerce')
     else:
         df['arrival_date'] = pd.NaT
 
-    if 'arrival_year' not in df.columns:
+    if 'arrival_year' in df.columns:
+        df['arrival_year'] = pd.to_numeric(df['arrival_year'], errors='coerce')
+    else:
         df['arrival_year'] = df['arrival_date'].dt.year
-    if 'arrival_month' not in df.columns:
-        df['arrival_month'] = df['arrival_date'].dt.month
-    if 'arrival_month_name' not in df.columns:
-        df['arrival_month_name'] = df['arrival_date'].dt.strftime('%B')
 
-    for col in ['is_canceled','adr','lead_time','total_stay_nights',
+    if 'arrival_month' in df.columns:
+        df['arrival_month'] = df['arrival_month'].apply(month_to_number)
+    else:
+        df['arrival_month'] = df['arrival_date'].dt.month
+
+    if 'arrival_month_name' in df.columns:
+        existing_month_name = df['arrival_month_name']
+        df['arrival_month_name'] = existing_month_name.where(existing_month_name.notna(), df['arrival_month'].apply(month_number_to_name))
+    else:
+        df['arrival_month_name'] = df['arrival_month'].apply(month_number_to_name)
+
+    # If arrival_date exists, use it to fill missing year/month/name
+    if 'arrival_date' in df.columns:
+        df['arrival_year'] = df['arrival_year'].where(df['arrival_year'].notna(), df['arrival_date'].dt.year)
+        df['arrival_month'] = df['arrival_month'].where(df['arrival_month'].notna(), df['arrival_date'].dt.month)
+        df['arrival_month_name'] = df['arrival_month_name'].where(df['arrival_month_name'].notna(), df['arrival_date'].dt.strftime('%B'))
+
+    # Cancellation flag can be 0/1 or text statuses such as Cancelled / Confirmed
+    if 'is_canceled' in df.columns:
+        df['is_canceled'] = normalize_cancel_flag(df['is_canceled'])
+
+    # Numeric fields
+    for col in ['adr','lead_time','total_stay_nights',
                 'stays_in_weekend_nights','stays_in_week_nights',
                 'previous_cancellations','is_repeated_guest','total_of_special_requests']:
         if col in df.columns:
@@ -461,15 +545,17 @@ def prepare_hotel_data(df):
     df['lost_revenue'] = np.where(df['is_canceled'] == 1, df['estimated_revenue'], 0)
     return df
 
-
 def prepare_arrivals_data(arrivals_df):
-    if arrivals_df is None: return None
+    if arrivals_df is None:
+        return None
     a = arrivals_df.copy()
-    for col in ['year','month','international_arrivals']:
-        if col in a.columns:
-            a[col] = pd.to_numeric(a[col], errors='coerce')
+    if 'year' in a.columns:
+        a['year'] = pd.to_numeric(a['year'], errors='coerce')
+    if 'month' in a.columns:
+        a['month'] = a['month'].apply(month_to_number)
+    if 'international_arrivals' in a.columns:
+        a['international_arrivals'] = pd.to_numeric(a['international_arrivals'], errors='coerce')
     return a
-
 
 def add_holiday_window(hotel_df, holidays_df, days=7):
     df = hotel_df.copy()
@@ -498,14 +584,18 @@ def add_holiday_window(hotel_df, holidays_df, days=7):
             direction='nearest', tolerance=pd.Timedelta(days=days))
         merged['holiday_window'] = merged['holiday_date'].notna()
         merged['nearest_holiday'] = merged.get('holiday_name', pd.Series(index=merged.index, dtype='object')).fillna('None')
-        merged['long_weekend_window'] = (
-            merged['holiday_window'] &
-            pd.to_numeric(merged.get('is_long_weekend', 0), errors='coerce').fillna(0).astype(int).eq(1)
-        )
-        merged['regional_holiday_window'] = (
-            merged['holiday_window'] &
-            pd.to_numeric(merged.get('is_regional_holiday', 0), errors='coerce').fillna(0).astype(int).eq(1)
-        )
+        if 'is_long_weekend' in merged.columns:
+            long_weekend_flag = normalize_bool_flag(merged['is_long_weekend'])
+        else:
+            long_weekend_flag = pd.Series(False, index=merged.index)
+
+        if 'is_regional_holiday' in merged.columns:
+            regional_flag = normalize_bool_flag(merged['is_regional_holiday'])
+        else:
+            regional_flag = pd.Series(False, index=merged.index)
+
+        merged['long_weekend_window'] = merged['holiday_window'] & long_weekend_flag
+        merged['regional_holiday_window'] = merged['holiday_window'] & regional_flag
         df = pd.concat([merged, invalid], ignore_index=True)
 
     return df.sort_values('_order').drop(columns=['_order'])
@@ -585,11 +675,12 @@ with st.sidebar:
     arrivals_upload = st.file_uploader("2️⃣ Arrivals / demand data", type=["xlsx","xls","csv"], help="e.g. Portugal international arrivals")
     holidays_upload = st.file_uploader("3️⃣ Public holidays data", type=["xlsx","xls","csv"], help="e.g. public holidays calendar")
 
-    st.caption("Upload the hospitality datasets by type. File names can be different each time.")
-    
-    hotel_raw, hotel_name   = load_dataset(hotel_upload)
-    arrivals_raw, arr_name  = load_dataset(arrivals_upload)
-    holidays_raw, hol_name  = load_dataset(holidays_upload)
+    st.caption("Files auto-load if saved next to this app as: cleaned_hotel_data.xlsx, cleaned_portugal_arrivals.xlsx, cleaned_Portugal_Public_Holidays_2015_2017.xlsx")
+
+hotel_raw, hotel_name   = load_dataset(hotel_upload,    "cleaned_hotel_data.xlsx")
+arrivals_raw, arr_name  = load_dataset(arrivals_upload, "cleaned_portugal_arrivals.xlsx")
+holidays_raw, hol_name  = load_dataset(holidays_upload, "cleaned_Portugal_Public_Holidays_2015_2017.xlsx")
+
 
 def landing_page():
     st.markdown("""
@@ -615,12 +706,13 @@ def landing_page():
                 <div style='font-size:13px;color:#8899BB;font-weight:500;'>{label}</div>
             </div>""", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    st.info("Upload at least the hotel booking file on the left to start. The arrivals and holiday files are optional.")
+    st.info("Upload all 3 files on the left to start: hotel booking data, arrivals/demand data, and public holidays data.")
 
-if hotel_raw is None or arrivals_raw is None or holidays_raw is None:
+
+if hotel_raw is None:
     landing_page()
-    st.warning("Please upload all 3 required files: hotel booking data, arrivals/demand data, and public holidays data.")
     st.stop()
+
 
 # ==========================================================
 # COLUMN MAPPING SCREENS — shown once per uploaded file
@@ -742,6 +834,15 @@ arrivals_mapped = apply_arrivals_mapping(arrivals_raw, st.session_state.get('fin
 holidays_mapped = apply_holidays_mapping(holidays_raw, st.session_state.get('final_holidays_mapping'))
 
 hotel_df = prepare_hotel_data(hotel_mapped)
+
+# The dashboard needs month/year for demand analysis and arrival_date for holiday-window analysis.
+if hotel_df['arrival_year'].isna().all() or hotel_df['arrival_month'].isna().all():
+    st.error("Please re-map your hotel booking file. The dashboard needs either an Arrival Date column, or both Arrival Year and Arrival Month columns.")
+    st.stop()
+
+if hotel_df['arrival_date'].isna().all():
+    st.warning("No valid Arrival Date was mapped, so holiday-window analysis may be limited. For full holiday impact analysis, map a check-in / arrival date column.")
+
 hotel_df = add_holiday_window(hotel_df, holidays_mapped, days=7)
 
 
@@ -1073,50 +1174,52 @@ with tab5:
         st.info("Upload an arrivals / demand file and map its columns to enable this analysis.")
     else:
         demand_df = monthly_df.dropna(subset=['international_arrivals']).copy()
-        demand_df['month_label'] = demand_df['arrival_month_name'].str[:3]+' '+demand_df['arrival_year'].astype(int).astype(str)
-        fig = make_subplots(specs=[[{'secondary_y':True}]])
-        fig.add_trace(go.Bar(name='International Arrivals', x=demand_df['month_label'],
-            y=demand_df['international_arrivals']/1e6, marker=dict(color=CYAN,opacity=0.45)), secondary_y=False)
-        fig.add_trace(go.Scatter(name='Hotel Confirmed Revenue', x=demand_df['month_label'],
-            y=demand_df['confirmed_revenue']/1e6, mode='lines+markers',
-            line=dict(color=BLUE,width=3), marker=dict(size=8)), secondary_y=True)
-        fig.update_yaxes(title_text='Arrivals (M)', secondary_y=False)
-        fig.update_yaxes(title_text='Hotel Revenue ($M)', tickprefix='$', ticksuffix='M', secondary_y=True)
-        fig.update_layout(**merged_layout(400))
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        if demand_df.empty:
+            st.warning("The arrivals file was uploaded, but its year/month values do not overlap with the hotel booking data after filters.")
+        else:
+            demand_df['month_label'] = demand_df['arrival_month_name'].str[:3]+' '+demand_df['arrival_year'].astype(int).astype(str)
+            fig = make_subplots(specs=[[{'secondary_y':True}]])
+            fig.add_trace(go.Bar(name='International Arrivals', x=demand_df['month_label'],
+                y=demand_df['international_arrivals']/1e6, marker=dict(color=CYAN,opacity=0.45)), secondary_y=False)
+            fig.add_trace(go.Scatter(name='Hotel Confirmed Revenue', x=demand_df['month_label'],
+                y=demand_df['confirmed_revenue']/1e6, mode='lines+markers',
+                line=dict(color=BLUE,width=3), marker=dict(size=8)), secondary_y=True)
+            fig.update_yaxes(title_text='Arrivals (M)', secondary_y=False)
+            fig.update_yaxes(title_text='Hotel Revenue ($M)', tickprefix='$', ticksuffix='M', secondary_y=True)
+            fig.update_layout(**merged_layout(400))
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-        best_rev = demand_df.sort_values('confirmed_revenue',ascending=False).iloc[0]
-        highest_cancel = demand_df.sort_values('cancel_rate',ascending=False).iloc[0]
-        pricing_opp = demand_df.dropna(subset=['pricing_gap']).sort_values('pricing_gap',ascending=False).head(5) if 'pricing_gap' in demand_df.columns else pd.DataFrame()
+            best_rev = demand_df.sort_values('confirmed_revenue',ascending=False).iloc[0]
+            highest_cancel = demand_df.sort_values('cancel_rate',ascending=False).iloc[0]
+            pricing_opp = demand_df.dropna(subset=['pricing_gap']).sort_values('pricing_gap',ascending=False).head(5) if 'pricing_gap' in demand_df.columns else pd.DataFrame()
 
-        a,b,c = st.columns(3)
-        a.markdown(f"""<div class='insight-card'>
-            <div class='insight-title'>Best Revenue Month</div>
-            <div class='insight-value' style='color:{BLUE};'>{best_rev['arrival_month_name']} {int(best_rev['arrival_year'])}</div>
-            <div class='insight-desc'>{money_m(best_rev['confirmed_revenue'])} confirmed with {pct(best_rev['cancel_rate'])} cancellation.</div>
-        </div>""", unsafe_allow_html=True)
-        b.markdown(f"""<div class='insight-card'>
-            <div class='insight-title'>Highest Cancellation Month</div>
-            <div class='insight-value' style='color:{RED};'>{highest_cancel['arrival_month_name']} {int(highest_cancel['arrival_year'])}</div>
-            <div class='insight-desc'>This month needs stronger deposit and reconfirmation controls.</div>
-        </div>""", unsafe_allow_html=True)
-        if not pricing_opp.empty:
-            opp = pricing_opp.iloc[0]
-            c.markdown(f"""<div class='insight-card'>
-                <div class='insight-title'>Pricing Opportunity</div>
-                <div class='insight-value' style='color:{AMBER};'>{opp['arrival_month_name']} {int(opp['arrival_year'])}</div>
-                <div class='insight-desc'>Demand rank exceeds ADR rank — room to review rates or packages.</div>
+            a,b,c = st.columns(3)
+            a.markdown(f"""<div class='insight-card'>
+                <div class='insight-title'>Best Revenue Month</div>
+                <div class='insight-value' style='color:{BLUE};'>{best_rev['arrival_month_name']} {int(best_rev['arrival_year'])}</div>
+                <div class='insight-desc'>{money_m(best_rev['confirmed_revenue'])} confirmed with {pct(best_rev['cancel_rate'])} cancellation.</div>
             </div>""", unsafe_allow_html=True)
+            b.markdown(f"""<div class='insight-card'>
+                <div class='insight-title'>Highest Cancellation Month</div>
+                <div class='insight-value' style='color:{RED};'>{highest_cancel['arrival_month_name']} {int(highest_cancel['arrival_year'])}</div>
+                <div class='insight-desc'>This month needs stronger deposit and reconfirmation controls.</div>
+            </div>""", unsafe_allow_html=True)
+            if not pricing_opp.empty:
+                opp = pricing_opp.iloc[0]
+                c.markdown(f"""<div class='insight-card'>
+                    <div class='insight-title'>Pricing Opportunity</div>
+                    <div class='insight-value' style='color:{AMBER};'>{opp['arrival_month_name']} {int(opp['arrival_year'])}</div>
+                    <div class='insight-desc'>Demand rank exceeds ADR rank — room to review rates or packages.</div>
+                </div>""", unsafe_allow_html=True)
 
-            st.markdown('<div class="section-header">💰 Underpriced Demand Windows</div>', unsafe_allow_html=True)
-            show_cols = [c for c in ['arrival_year','arrival_month_name','international_arrivals','avg_adr','cancel_rate','confirmed_revenue','pricing_gap'] if c in pricing_opp.columns]
-            display_opp = pricing_opp[show_cols].copy()
-            if 'confirmed_revenue' in display_opp: display_opp['confirmed_revenue'] = display_opp['confirmed_revenue'].map(lambda x: f"${x:,.0f}")
-            if 'avg_adr' in display_opp: display_opp['avg_adr'] = display_opp['avg_adr'].map(lambda x: f"${x:,.0f}")
-            if 'cancel_rate' in display_opp: display_opp['cancel_rate'] = display_opp['cancel_rate'].map(lambda x: f"{x:.1f}%")
-            if 'pricing_gap' in display_opp: display_opp['pricing_gap'] = display_opp['pricing_gap'].map(lambda x: f"{x:.1f}")
-            st.dataframe(display_opp, use_container_width=True, hide_index=True)
-
+                st.markdown('<div class="section-header">💰 Underpriced Demand Windows</div>', unsafe_allow_html=True)
+                show_cols = [c for c in ['arrival_year','arrival_month_name','international_arrivals','avg_adr','cancel_rate','confirmed_revenue','pricing_gap'] if c in pricing_opp.columns]
+                display_opp = pricing_opp[show_cols].copy()
+                if 'confirmed_revenue' in display_opp: display_opp['confirmed_revenue'] = display_opp['confirmed_revenue'].map(lambda x: f"${x:,.0f}")
+                if 'avg_adr' in display_opp: display_opp['avg_adr'] = display_opp['avg_adr'].map(lambda x: f"${x:,.0f}")
+                if 'cancel_rate' in display_opp: display_opp['cancel_rate'] = display_opp['cancel_rate'].map(lambda x: f"{x:.1f}%")
+                if 'pricing_gap' in display_opp: display_opp['pricing_gap'] = display_opp['pricing_gap'].map(lambda x: f"{x:.1f}")
+                st.dataframe(display_opp, use_container_width=True, hide_index=True)
 # ── TAB 6 ──────────────────────────────────────────────────
 with tab6:
     st.markdown('<div class="section-header">🎉 Public Holiday Booking Behaviour</div>', unsafe_allow_html=True)
