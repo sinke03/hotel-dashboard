@@ -585,12 +585,11 @@ with st.sidebar:
     arrivals_upload = st.file_uploader("2️⃣ Arrivals / demand data", type=["xlsx","xls","csv"], help="e.g. Portugal international arrivals")
     holidays_upload = st.file_uploader("3️⃣ Public holidays data", type=["xlsx","xls","csv"], help="e.g. public holidays calendar")
 
-    st.caption("Files auto-load if saved next to this app as: cleaned_hotel_data.xlsx, cleaned_portugal_arrivals.xlsx, cleaned_Portugal_Public_Holidays_2015_2017.xlsx")
-
-hotel_raw, hotel_name   = load_dataset(hotel_upload,    "cleaned_hotel_data.xlsx")
-arrivals_raw, arr_name  = load_dataset(arrivals_upload, "cleaned_portugal_arrivals.xlsx")
-holidays_raw, hol_name  = load_dataset(holidays_upload, "cleaned_Portugal_Public_Holidays_2015_2017.xlsx")
-
+    st.caption("Upload the hospitality datasets by type. File names can be different each time.")
+    
+    hotel_raw, hotel_name   = load_dataset(hotel_upload)
+    arrivals_raw, arr_name  = load_dataset(arrivals_upload)
+    holidays_raw, hol_name  = load_dataset(holidays_upload)
 
 def landing_page():
     st.markdown("""
@@ -618,11 +617,10 @@ def landing_page():
     st.markdown("<br>", unsafe_allow_html=True)
     st.info("Upload at least the hotel booking file on the left to start. The arrivals and holiday files are optional.")
 
-
-if hotel_raw is None:
+if hotel_raw is None or arrivals_raw is None or holidays_raw is None:
     landing_page()
+    st.warning("Please upload all 3 required files: hotel booking data, arrivals/demand data, and public holidays data.")
     st.stop()
-
 
 # ==========================================================
 # COLUMN MAPPING SCREENS — shown once per uploaded file
