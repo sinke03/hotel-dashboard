@@ -308,14 +308,18 @@ n_sources   = df['_source_file'].nunique()
 
 source_label = f"{n_sources} data source{'s' if n_sources > 1 else ''}" if n_sources > 1 else ""
 
+source_tag = (f"&nbsp;·&nbsp; <strong style='color:#22D47B'>{n_sources} data sources merged</strong>"
+              if n_sources > 1 else "")
+
 st.markdown(f"""
 <div style='margin-bottom:1.5rem;'>
     <h1 style='color:#FFFFFF;font-size:28px;font-weight:800;margin-bottom:4px;'>
         🏨 Hotel Revenue Intelligence
     </h1>
     <p style='color:#5577AA;font-size:14px;'>
-        Portugal Hospitality Market &nbsp;·&nbsp; <strong style='color:#7ABAFF'>{total:,}</strong> bookings analysed
-        {"&nbsp;·&nbsp; <strong style='color:#22D47B'>" + source_label + " merged</strong>" if source_label else ""}
+        Portugal Hospitality Market &nbsp;·&nbsp;
+        <strong style='color:#7ABAFF'>{total:,}</strong> bookings analysed
+        {source_tag}
         &nbsp;·&nbsp; Auto-generated insights
     </p>
 </div>
