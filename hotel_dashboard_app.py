@@ -15,7 +15,7 @@ st.set_page_config(
 # ── Theme CSS ─────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
@@ -28,17 +28,33 @@ section[data-testid="stSidebar"] * { color: #8899BB !important; }
 section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2,
 section[data-testid="stSidebar"] h3 { color: #E0E6F0 !important; }
 
-/* Metric cards */
+/* ── KPI Metric cards — much more visible numbers ── */
 div[data-testid="metric-container"] {
-    background: linear-gradient(135deg, #0D1628 0%, #111E35 100%);
-    border: 1px solid #1A2A45;
+    background: linear-gradient(135deg, #0D1628 0%, #152240 100%);
+    border: 1px solid #2A3F6A;
     border-radius: 16px;
-    padding: 1.2rem 1.5rem;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    padding: 1.4rem 1.6rem;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04);
 }
-div[data-testid="metric-container"] label { color: #6688AA !important; font-size: 12px !important; text-transform: uppercase; letter-spacing: 0.08em; }
-div[data-testid="metric-container"] div[data-testid="stMetricValue"] { color: #E0E6F0 !important; font-size: 26px !important; font-weight: 700 !important; }
-div[data-testid="metric-container"] div[data-testid="stMetricDelta"] { font-size: 12px !important; }
+div[data-testid="metric-container"] label {
+    color: #7A9EC8 !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+}
+div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+    color: #FFFFFF !important;
+    font-size: 32px !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.5px;
+    text-shadow: 0 0 20px rgba(74,158,255,0.3);
+    line-height: 1.15 !important;
+}
+div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
+    font-size: 12px !important;
+    font-weight: 500 !important;
+}
 
 /* Section headers */
 .section-header {
@@ -57,6 +73,14 @@ div[data-testid="metric-container"] div[data-testid="stMetricDelta"] { font-size
     border: 2px dashed #2A4070;
     border-radius: 16px; padding: 2rem;
     text-align: center; margin-bottom: 1.5rem;
+}
+
+/* File badge row */
+.file-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #0F1E38; border: 1px solid #2A4070;
+    border-radius: 8px; padding: 4px 10px;
+    font-size: 12px; color: #7ABAFF; margin: 3px;
 }
 
 /* Insight cards */
@@ -88,15 +112,12 @@ hr { border-color: #1A2A45 !important; }
 /* Info/success boxes */
 div[data-testid="stAlert"] { border-radius: 10px !important; }
 
-/* ── Multiselect tag override: blue instead of red ── */
+/* ── Multiselect tag: blue instead of red ── */
 span[data-baseweb="tag"] {
     background-color: #1A3A6A !important;
     border: 1px solid #2A5099 !important;
 }
-span[data-baseweb="tag"] span {
-    color: #7ABAFF !important;
-}
-/* Remove (x) button color */
+span[data-baseweb="tag"] span { color: #7ABAFF !important; }
 span[data-baseweb="tag"] button svg { fill: #7ABAFF !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -122,31 +143,40 @@ CHART_LAYOUT = dict(
     hoverlabel=dict(bgcolor="#0D1628", bordercolor="#1A2A45", font=dict(color="#E0E6F0")),
 )
 
-# ── Safe layout merger (avoids duplicate key TypeError) ───
+# ── Safe layout merger ────────────────────────────────────
 def merged_layout(height, **overrides):
-    """Merge CHART_LAYOUT with overrides safely — no duplicate kwargs."""
     layout = dict(**CHART_LAYOUT)
     layout.update(overrides)
     layout['height'] = height
     return layout
 
 # ── Helpers ───────────────────────────────────────────────
+MONTH_ORDER = ['January','February','March','April','May','June',
+               'July','August','September','October','November','December']
+
 def get_season(m):
-    if m in ['June','July','August']: return '☀️ Summer'
-    elif m in ['March','April','May']: return '🌸 Spring'
+    if m in ['June','July','August']:          return '☀️ Summer'
+    elif m in ['March','April','May']:          return '🌸 Spring'
     elif m in ['September','October','November']: return '🍂 Autumn'
-    else: return '❄️ Winter'
+    else:                                        return '❄️ Winter'
 
 @st.cache_data
-def process_data(file):
-    df = pd.read_excel(file)
-    df['arrival_date'] = pd.to_datetime(df['arrival_date'], errors='coerce')
-    if 'arrival_month_name' not in df.columns and 'arrival_date' in df.columns:
+def process_single(file_bytes, file_name):
+    """Process one uploaded file (bytes) into a clean DataFrame."""
+    import io
+    if file_name.endswith('.csv'):
+        df = pd.read_csv(io.BytesIO(file_bytes))
+    else:
+        df = pd.read_excel(io.BytesIO(file_bytes))
+    df['_source_file'] = file_name
+    df['arrival_date'] = pd.to_datetime(df.get('arrival_date', pd.NaT), errors='coerce')
+    if 'arrival_month_name' not in df.columns:
         df['arrival_month_name'] = df['arrival_date'].dt.strftime('%B')
-    if 'arrival_year' not in df.columns and 'arrival_date' in df.columns:
+    if 'arrival_year' not in df.columns:
         df['arrival_year'] = df['arrival_date'].dt.year
     if 'estimated_revenue' not in df.columns and 'adr' in df.columns:
-        df['estimated_revenue'] = df['adr'] * df.get('total_stay_nights', 1)
+        nights = df['total_stay_nights'] if 'total_stay_nights' in df.columns else pd.Series(1, index=df.index)
+        df['estimated_revenue'] = df['adr'] * nights
     df['season'] = df['arrival_month_name'].apply(get_season)
     return df
 
@@ -160,41 +190,74 @@ with st.sidebar:
     st.markdown("---")
 
     st.markdown("### 📂 Upload Your Data")
-    uploaded = st.file_uploader(
-        "Drop your Excel file here",
+    st.caption("You can upload **multiple files** — they will be merged and analysed together.")
+
+    uploaded_files = st.file_uploader(
+        "Drop Excel / CSV files here",
         type=["xlsx", "xls", "csv"],
-        help="Upload hotel bookings data. Supports .xlsx, .xls, .csv"
+        accept_multiple_files=True,
+        help="Upload one or more hotel booking files. Supports .xlsx, .xls, .csv"
     )
 
-    if uploaded:
-        df_raw = process_data(uploaded)
-        st.success(f"✅ **{len(df_raw):,}** rows loaded")
-        st.markdown("---")
+    if uploaded_files:
+        frames = []
+        errors = []
+        for f in uploaded_files:
+            try:
+                frames.append(process_single(f.read(), f.name))
+            except Exception as e:
+                errors.append(f"❌ {f.name}: {e}")
 
-        st.markdown("### 🎛 Filters")
-        years = sorted(df_raw['arrival_year'].dropna().unique().astype(int))
-        sel_years = st.multiselect("📅 Year", years, default=years)
+        if errors:
+            for err in errors:
+                st.warning(err)
 
-        hotels = sorted(df_raw['hotel'].dropna().unique())
-        sel_hotels = st.multiselect("🏨 Hotel Type", hotels, default=hotels)
+        if frames:
+            df_raw = pd.concat(frames, ignore_index=True)
+            file_names = [f.name for f in uploaded_files]
 
-        top_countries = df_raw.groupby('country')['estimated_revenue'].sum().nlargest(10).index.tolist()
-        sel_countries = st.multiselect("🌍 Country", top_countries, default=top_countries)
+            # Show loaded file badges
+            badges_html = "".join([f"<span class='file-badge'>📄 {n}</span>" for n in file_names])
+            st.markdown(f"<div style='margin-bottom:6px;'>{badges_html}</div>", unsafe_allow_html=True)
+            st.success(f"✅ **{len(df_raw):,}** rows from **{len(frames)}** file(s)")
 
-        df = df_raw[
-            df_raw['arrival_year'].isin(sel_years) &
-            df_raw['hotel'].isin(sel_hotels) &
-            df_raw['country'].isin(sel_countries if sel_countries else top_countries)
-        ]
-        st.caption(f"Showing **{len(df):,}** bookings after filters")
+            st.markdown("---")
+            st.markdown("### 🎛 Filters")
+
+            years = sorted(df_raw['arrival_year'].dropna().unique().astype(int))
+            sel_years = st.multiselect("📅 Year", years, default=years)
+
+            hotels = sorted(df_raw['hotel'].dropna().unique()) if 'hotel' in df_raw.columns else []
+            sel_hotels = st.multiselect("🏨 Hotel Type", hotels, default=hotels)
+
+            # File source filter (only when >1 file)
+            if len(frames) > 1:
+                sel_files = st.multiselect("📁 Data Source", file_names, default=file_names)
+            else:
+                sel_files = file_names
+
+            top_countries = df_raw.groupby('country')['estimated_revenue'].sum().nlargest(10).index.tolist() \
+                if 'country' in df_raw.columns else []
+            sel_countries = st.multiselect("🌍 Country", top_countries, default=top_countries)
+
+            mask = df_raw['arrival_year'].isin(sel_years) & df_raw['_source_file'].isin(sel_files)
+            if sel_hotels:
+                mask &= df_raw['hotel'].isin(sel_hotels)
+            if sel_countries:
+                mask &= df_raw['country'].isin(sel_countries if sel_countries else top_countries)
+            df = df_raw[mask]
+
+            st.caption(f"Showing **{len(df):,}** bookings after filters")
+        else:
+            df = None
     else:
         df = None
-        st.info("👆 Upload an Excel file to get started")
+        st.info("👆 Upload one or more Excel / CSV files to get started")
 
     st.markdown("---")
     st.markdown("<p style='font-size:11px;color:#334466;text-align:center;'>© 2026 Strateq Group · BDA Dept</p>", unsafe_allow_html=True)
 
-# ── Main ──────────────────────────────────────────────────
+# ── Landing page ──────────────────────────────────────────
 if df is None:
     st.markdown("""
     <div style='text-align:center; padding: 4rem 2rem;'>
@@ -203,7 +266,7 @@ if df is None:
             Hotel Revenue Intelligence
         </h1>
         <p style='color:#5577AA; font-size:18px; margin-bottom:2rem;'>
-            Upload your hotel data and get instant AI-powered revenue insights
+            Upload one or multiple hotel data files for instant revenue insights
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -220,15 +283,20 @@ if df is None:
                 <div style='font-size:13px;color:#8899BB;font-weight:500;'>{label}</div>
             </div>""", unsafe_allow_html=True)
 
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("""
-    <div style='text-align:center;color:#334466;font-size:13px;'>
-        👈 Upload your <strong style='color:#4A9EFF'>cleaned_hotel_data.xlsx</strong> in the sidebar to begin
+    <div style='text-align:center;background:linear-gradient(135deg,#0D1628,#111E35);
+    border:1px solid #1A2A45;border-radius:14px;padding:1.2rem 2rem;max-width:500px;margin:0 auto;'>
+        <div style='font-size:13px;color:#5577AA;margin-bottom:6px;'>Supported formats</div>
+        <div style='font-size:14px;color:#7ABAFF;font-weight:600;'>.xlsx &nbsp;·&nbsp; .xls &nbsp;·&nbsp; .csv</div>
+        <div style='font-size:12px;color:#334466;margin-top:8px;'>
+            Upload multiple files — they are automatically merged
+        </div>
     </div>
     """, unsafe_allow_html=True)
     st.stop()
 
-# ── Dashboard KPIs ────────────────────────────────────────
+# ── KPI calculations ──────────────────────────────────────
 confirmed   = df[df['is_canceled']==0]['estimated_revenue'].sum()
 lost        = df[df['is_canceled']==1]['estimated_revenue'].sum()
 total       = len(df)
@@ -236,18 +304,24 @@ cancelled   = int(df['is_canceled'].sum())
 cancel_rate = cancelled / total * 100 if total > 0 else 0
 avg_adr     = df[df['is_canceled']==0]['adr'].mean() if 'adr' in df.columns else 0
 loss_ratio  = lost / confirmed if confirmed > 0 else 0
+n_sources   = df['_source_file'].nunique()
+
+source_label = f"{n_sources} data source{'s' if n_sources > 1 else ''}" if n_sources > 1 else ""
 
 st.markdown(f"""
 <div style='margin-bottom:1.5rem;'>
-    <h1 style='color:#E0E6F0;font-size:28px;font-weight:700;margin-bottom:4px;'>
+    <h1 style='color:#FFFFFF;font-size:28px;font-weight:800;margin-bottom:4px;'>
         🏨 Hotel Revenue Intelligence
     </h1>
     <p style='color:#5577AA;font-size:14px;'>
-        Portugal Hospitality Market · {total:,} bookings analysed · Auto-generated insights
+        Portugal Hospitality Market &nbsp;·&nbsp; <strong style='color:#7ABAFF'>{total:,}</strong> bookings analysed
+        {"&nbsp;·&nbsp; <strong style='color:#22D47B'>" + source_label + " merged</strong>" if source_label else ""}
+        &nbsp;·&nbsp; Auto-generated insights
     </p>
 </div>
 """, unsafe_allow_html=True)
 
+# ── KPI Row ───────────────────────────────────────────────
 k1, k2, k3, k4, k5 = st.columns(5)
 with k1: st.metric("✅ Confirmed Revenue",  f"${confirmed/1e6:.2f}M", f"+${confirmed/1e6*0.08:.1f}M YoY est.")
 with k2: st.metric("❌ Revenue Lost",       f"${lost/1e6:.2f}M",      f"-{loss_ratio:.0%} loss ratio",  delta_color="inverse")
@@ -265,10 +339,6 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📅 Seasonality",
     "🎯 Recommendations"
 ])
-
-# ── Month order helper ─────────────────────────────────────
-MONTH_ORDER = ['January','February','March','April','May','June',
-               'July','August','September','October','November','December']
 
 # ════════════════════════════════════════════════════
 # TAB 1 — Revenue Overview
@@ -309,36 +379,55 @@ with tab1:
     ))
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
+    # Per-file comparison (only when multiple sources)
+    if n_sources > 1:
+        st.markdown('<div class="section-header">📁 Revenue by Data Source</div>', unsafe_allow_html=True)
+        src_rev = df[df['is_canceled']==0].groupby('_source_file')['estimated_revenue'].sum().reset_index()
+        src_rev.columns = ['file','revenue']
+        src_rev['revenue_m'] = src_rev['revenue'] / 1e6
+        fig_src = px.bar(src_rev, x='file', y='revenue_m',
+            color='revenue_m', color_continuous_scale=[[0,'#0D2040'],[1,BLUE]],
+            text=src_rev['revenue_m'].apply(lambda x: f'${x:.2f}M'))
+        fig_src.update_traces(textposition='outside', textfont=dict(color='#E0E6F0', size=12))
+        fig_src.update_layout(**merged_layout(
+            280,
+            yaxis=dict(tickprefix='$', ticksuffix='M', gridcolor='#1A2A45', showline=False, zeroline=False),
+            coloraxis_showscale=False
+        ))
+        st.plotly_chart(fig_src, use_container_width=True, config={"displayModeBar": False})
+
     col1, col2 = st.columns(2)
     with col1:
         st.markdown('<div class="section-header">🏨 Revenue by Hotel Type</div>', unsafe_allow_html=True)
-        hotel_df = df[df['is_canceled']==0].groupby('hotel')['estimated_revenue'].sum().reset_index()
-        fig2 = px.pie(hotel_df, values='estimated_revenue', names='hotel',
-            color_discrete_sequence=[BLUE, PURPLE], hole=0.55)
-        fig2.update_traces(
-            textinfo='percent+label', textfont_color='white',
-            marker=dict(line=dict(color='#060B18', width=3))
-        )
-        chart(fig2, 300)
+        if 'hotel' in df.columns:
+            hotel_df = df[df['is_canceled']==0].groupby('hotel')['estimated_revenue'].sum().reset_index()
+            fig2 = px.pie(hotel_df, values='estimated_revenue', names='hotel',
+                color_discrete_sequence=[BLUE, PURPLE], hole=0.55)
+            fig2.update_traces(
+                textinfo='percent+label', textfont_color='white',
+                marker=dict(line=dict(color='#060B18', width=3))
+            )
+            chart(fig2, 300)
 
     with col2:
         st.markdown('<div class="section-header">📦 Revenue by Market Segment</div>', unsafe_allow_html=True)
-        seg_df = (df[df['is_canceled']==0]
-                  .groupby('market_segment')['estimated_revenue']
-                  .sum().reset_index()
-                  .sort_values('estimated_revenue'))
-        fig3 = px.bar(seg_df, x='estimated_revenue', y='market_segment', orientation='h',
-            color='estimated_revenue', color_continuous_scale=[[0,'#0D1628'],[1,BLUE]])
-        fig3.update_traces(
-            texttemplate='$%{x:.1f}', textposition='outside',
-            textfont=dict(color='#8899BB', size=11)
-        )
-        fig3.update_layout(**merged_layout(
-            300,
-            xaxis=dict(tickprefix='$', gridcolor='#1A2A45', showline=False, zeroline=False),
-            coloraxis_showscale=False
-        ))
-        st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
+        if 'market_segment' in df.columns:
+            seg_df = (df[df['is_canceled']==0]
+                      .groupby('market_segment')['estimated_revenue']
+                      .sum().reset_index()
+                      .sort_values('estimated_revenue'))
+            fig3 = px.bar(seg_df, x='estimated_revenue', y='market_segment', orientation='h',
+                color='estimated_revenue', color_continuous_scale=[[0,'#0D1628'],[1,BLUE]])
+            fig3.update_traces(
+                texttemplate='$%{x:.1f}', textposition='outside',
+                textfont=dict(color='#8899BB', size=11)
+            )
+            fig3.update_layout(**merged_layout(
+                300,
+                xaxis=dict(tickprefix='$', gridcolor='#1A2A45', showline=False, zeroline=False),
+                coloraxis_showscale=False
+            ))
+            st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
 
 # ════════════════════════════════════════════════════
 # TAB 2 — Cancellation Analysis
@@ -368,45 +457,46 @@ with tab2:
     col1, col2 = st.columns(2)
     with col1:
         st.markdown('<div class="section-header">💳 Cancellation Rate by Deposit Type</div>', unsafe_allow_html=True)
-        dep_df = df.groupby('deposit_type').agg(
-            total=('is_canceled','count'),
-            cancelled=('is_canceled','sum')
-        ).reset_index()
-        dep_df['cancel_rate'] = dep_df['cancelled'] / dep_df['total'] * 100
-        dep_df = dep_df.sort_values('cancel_rate', ascending=True)
-
-        colors_dep = [RED if x > 50 else AMBER if x > 25 else GREEN for x in dep_df['cancel_rate']]
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            x=dep_df['cancel_rate'], y=dep_df['deposit_type'], orientation='h',
-            marker=dict(color=colors_dep, opacity=0.85),
-            text=dep_df['cancel_rate'].apply(lambda x: f'{x:.1f}%'),
-            textposition='outside', textfont=dict(color='#E0E6F0', size=12, family='Inter')
-        ))
-        fig.update_layout(**merged_layout(
-            280,
-            xaxis=dict(ticksuffix='%', range=[0,115], gridcolor='#1A2A45', showline=False, zeroline=False)
-        ))
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        st.caption("⚠️ **Non-refundable ≠ confirmed revenue** — nearly 95% of these cancel!")
+        if 'deposit_type' in df.columns:
+            dep_df = df.groupby('deposit_type').agg(
+                total=('is_canceled','count'),
+                cancelled=('is_canceled','sum')
+            ).reset_index()
+            dep_df['cancel_rate'] = dep_df['cancelled'] / dep_df['total'] * 100
+            dep_df = dep_df.sort_values('cancel_rate', ascending=True)
+            colors_dep = [RED if x > 50 else AMBER if x > 25 else GREEN for x in dep_df['cancel_rate']]
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=dep_df['cancel_rate'], y=dep_df['deposit_type'], orientation='h',
+                marker=dict(color=colors_dep, opacity=0.85),
+                text=dep_df['cancel_rate'].apply(lambda x: f'{x:.1f}%'),
+                textposition='outside', textfont=dict(color='#E0E6F0', size=12, family='Inter')
+            ))
+            fig.update_layout(**merged_layout(
+                280,
+                xaxis=dict(ticksuffix='%', range=[0,115], gridcolor='#1A2A45', showline=False, zeroline=False)
+            ))
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.caption("⚠️ **Non-refundable ≠ confirmed revenue** — nearly 95% of these cancel!")
 
     with col2:
         st.markdown('<div class="section-header">👥 Cancellation by Customer Type</div>', unsafe_allow_html=True)
-        cust_df = df.groupby('customer_type').agg(
-            total=('is_canceled','count'),
-            cancelled=('is_canceled','sum')
-        ).reset_index()
-        cust_df['cancel_rate'] = cust_df['cancelled'] / cust_df['total'] * 100
-        fig = px.bar(cust_df, x='customer_type', y='cancel_rate',
-            color='cancel_rate', color_continuous_scale=[[0,GREEN],[0.5,AMBER],[1,RED]],
-            text=cust_df['cancel_rate'].apply(lambda x: f'{x:.1f}%'))
-        fig.update_traces(textposition='outside', textfont=dict(color='#E0E6F0', size=12))
-        fig.update_layout(**merged_layout(
-            280,
-            yaxis=dict(ticksuffix='%', gridcolor='#1A2A45', showline=False, zeroline=False),
-            coloraxis_showscale=False
-        ))
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        if 'customer_type' in df.columns:
+            cust_df = df.groupby('customer_type').agg(
+                total=('is_canceled','count'),
+                cancelled=('is_canceled','sum')
+            ).reset_index()
+            cust_df['cancel_rate'] = cust_df['cancelled'] / cust_df['total'] * 100
+            fig = px.bar(cust_df, x='customer_type', y='cancel_rate',
+                color='cancel_rate', color_continuous_scale=[[0,GREEN],[0.5,AMBER],[1,RED]],
+                text=cust_df['cancel_rate'].apply(lambda x: f'{x:.1f}%'))
+            fig.update_traces(textposition='outside', textfont=dict(color='#E0E6F0', size=12))
+            fig.update_layout(**merged_layout(
+                280,
+                yaxis=dict(ticksuffix='%', gridcolor='#1A2A45', showline=False, zeroline=False),
+                coloraxis_showscale=False
+            ))
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     st.markdown('<div class="section-header">📊 Revenue Lost vs Confirmed — Monthly Trend</div>', unsafe_allow_html=True)
     fig = go.Figure()
@@ -432,34 +522,35 @@ with tab2:
 with tab3:
     st.markdown('<div class="section-header">🌍 Top Source Markets — Revenue vs Cancellation Rate</div>', unsafe_allow_html=True)
 
-    country_df = df.groupby('country').agg(
-        revenue=('estimated_revenue', lambda x: x[df.loc[x.index,'is_canceled']==0].sum() / 1e6),
-        total=('is_canceled','count'),
-        cancelled=('is_canceled','sum')
-    ).reset_index()
-    country_df['cancel_rate'] = country_df['cancelled'] / country_df['total'] * 100
-    country_df = country_df.nlargest(8, 'revenue')
+    if 'country' in df.columns:
+        country_df = df.groupby('country').agg(
+            revenue=('estimated_revenue', lambda x: x[df.loc[x.index,'is_canceled']==0].sum() / 1e6),
+            total=('is_canceled','count'),
+            cancelled=('is_canceled','sum')
+        ).reset_index()
+        country_df['cancel_rate'] = country_df['cancelled'] / country_df['total'] * 100
+        country_df = country_df.nlargest(8, 'revenue')
 
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(go.Bar(
-        name='Revenue ($M)', x=country_df['country'], y=country_df['revenue'],
-        marker=dict(color=BLUE, opacity=0.85),
-        text=country_df['revenue'].apply(lambda x: f'${x:.2f}M'),
-        textposition='outside', textfont=dict(color='#8899BB', size=11)
-    ), secondary_y=False)
-    fig.add_trace(go.Scatter(
-        name='Cancel Rate', x=country_df['country'], y=country_df['cancel_rate'],
-        mode='lines+markers+text', line=dict(color=RED, width=3),
-        marker=dict(size=10, color=RED, line=dict(color='white', width=2)),
-        text=country_df['cancel_rate'].apply(lambda x: f'{x:.1f}%'),
-        textposition='top center', textfont=dict(color=RED, size=11)
-    ), secondary_y=True)
-    fig.update_layout(**merged_layout(
-        380,
-        yaxis=dict(tickprefix='$', ticksuffix='M', gridcolor='#1A2A45', showline=False, zeroline=False),
-        yaxis2=dict(ticksuffix='%', gridcolor='rgba(0,0,0,0)', showline=False, zeroline=False)
-    ))
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(go.Bar(
+            name='Revenue ($M)', x=country_df['country'], y=country_df['revenue'],
+            marker=dict(color=BLUE, opacity=0.85),
+            text=country_df['revenue'].apply(lambda x: f'${x:.2f}M'),
+            textposition='outside', textfont=dict(color='#8899BB', size=11)
+        ), secondary_y=False)
+        fig.add_trace(go.Scatter(
+            name='Cancel Rate', x=country_df['country'], y=country_df['cancel_rate'],
+            mode='lines+markers+text', line=dict(color=RED, width=3),
+            marker=dict(size=10, color=RED, line=dict(color='white', width=2)),
+            text=country_df['cancel_rate'].apply(lambda x: f'{x:.1f}%'),
+            textposition='top center', textfont=dict(color=RED, size=11)
+        ), secondary_y=True)
+        fig.update_layout(**merged_layout(
+            380,
+            yaxis=dict(tickprefix='$', ticksuffix='M', gridcolor='#1A2A45', showline=False, zeroline=False),
+            yaxis2=dict(ticksuffix='%', gridcolor='rgba(0,0,0,0)', showline=False, zeroline=False)
+        ))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     col1, col2 = st.columns(2)
     with col1:
@@ -612,10 +703,14 @@ with tab5:
     st.markdown('<div class="section-header">📊 Auto-Generated Key Insights</div>', unsafe_allow_html=True)
 
     i1, i2, i3, i4 = st.columns(4)
-    top_country   = df[df['is_canceled']==0].groupby('country')['estimated_revenue'].sum().idxmax() if len(df) > 0 else "N/A"
-    best_country  = df.groupby('country').apply(lambda x: x['is_canceled'].sum()/len(x)).idxmin()  if len(df) > 0 else "N/A"
-    best_season   = df[df['is_canceled']==0].groupby('season')['estimated_revenue'].sum().idxmax()  if len(df) > 0 else "N/A"
-    worst_deposit = df.groupby('deposit_type').apply(lambda x: x['is_canceled'].sum()/len(x)).idxmax() if len(df) > 0 else "N/A"
+    top_country   = df[df['is_canceled']==0].groupby('country')['estimated_revenue'].sum().idxmax() \
+        if 'country' in df.columns and len(df) > 0 else "N/A"
+    best_country  = df.groupby('country').apply(lambda x: x['is_canceled'].sum()/len(x)).idxmin() \
+        if 'country' in df.columns and len(df) > 0 else "N/A"
+    best_season   = df[df['is_canceled']==0].groupby('season')['estimated_revenue'].sum().idxmax() \
+        if len(df) > 0 else "N/A"
+    worst_deposit = df.groupby('deposit_type').apply(lambda x: x['is_canceled'].sum()/len(x)).idxmax() \
+        if 'deposit_type' in df.columns and len(df) > 0 else "N/A"
 
     for col, icon, label, val, desc in zip(
         [i1, i2, i3, i4],
