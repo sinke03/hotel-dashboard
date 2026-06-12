@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 import io
 import numpy as np
 import pandas as pd
@@ -223,27 +222,32 @@ def read_any_file(file_bytes, file_name):
         return pd.read_csv(io.BytesIO(file_bytes))
     return pd.read_excel(io.BytesIO(file_bytes))
 
-@st.cache_data(show_spinner=False)
-def read_default_excel(path):
-    if Path(path).exists():
-        return pd.read_excel(path)
-    return None
-
-def load_dataset(uploaded_file, default_path=None):
-    """
-    Load a dataset from the uploader.
-    File names are NOT fixed; users upload files by data type.
-    default_path is optional and only used if you want to support local demo files.
-    """
+def load_dataset(uploaded_file):
+    """Load only the file uploaded by the user. No fixed file names. No auto-loading."""
     if uploaded_file is not None:
         return read_any_file(uploaded_file.getvalue(), uploaded_file.name), uploaded_file.name
-
-    if default_path:
-        default_df = read_default_excel(default_path)
-        if default_df is not None:
-            return default_df, default_path
-
     return None, None
+
+
+def dataset_signature(df, name):
+    """Create a lightweight signature so mappings reset when the user uploads a different file."""
+    if df is None:
+        return None
+    return {
+        "name": str(name),
+        "rows": int(df.shape[0]),
+        "columns": [str(c) for c in df.columns],
+    }
+
+
+def reset_mapping_state():
+    for key in [
+        'hotel_mapping', 'arrivals_mapping', 'holidays_mapping',
+        'final_hotel_mapping', 'final_arrivals_mapping', 'final_holidays_mapping',
+        'confirmed_mappings'
+    ]:
+        if key in st.session_state:
+            del st.session_state[key]
 
 # ==========================================================
 # COLUMN MAPPING SYSTEM
@@ -675,11 +679,21 @@ with st.sidebar:
     arrivals_upload = st.file_uploader("2️⃣ Arrivals / demand data", type=["xlsx","xls","csv"], help="e.g. Portugal international arrivals")
     holidays_upload = st.file_uploader("3️⃣ Public holidays data", type=["xlsx","xls","csv"], help="e.g. public holidays calendar")
 
-    st.caption("Files auto-load if saved next to this app as: cleaned_hotel_data.xlsx, cleaned_portugal_arrivals.xlsx, cleaned_Portugal_Public_Holidays_2015_2017.xlsx")
+    st.caption("Upload the datasets by type. The file names can be anything.")
 
-hotel_raw, hotel_name   = load_dataset(hotel_upload,    "cleaned_hotel_data.xlsx")
-arrivals_raw, arr_name  = load_dataset(arrivals_upload, "cleaned_portugal_arrivals.xlsx")
-holidays_raw, hol_name  = load_dataset(holidays_upload, "cleaned_Portugal_Public_Holidays_2015_2017.xlsx")
+hotel_raw, hotel_name   = load_dataset(hotel_upload)
+arrivals_raw, arr_name  = load_dataset(arrivals_upload)
+holidays_raw, hol_name  = load_dataset(holidays_upload)
+
+current_signature = {
+    'hotel': dataset_signature(hotel_raw, hotel_name),
+    'arrivals': dataset_signature(arrivals_raw, arr_name),
+    'holidays': dataset_signature(holidays_raw, hol_name),
+}
+
+if st.session_state.get('uploaded_file_signature') != current_signature:
+    reset_mapping_state()
+    st.session_state['uploaded_file_signature'] = current_signature
 
 
 def landing_page():
@@ -690,7 +704,7 @@ def landing_page():
             Hotel Revenue Intelligence
         </h1>
         <p style='color:#5577AA;font-size:18px;margin-bottom:2rem;'>
-            Upload any hotel dataset — the dashboard adapts to your column names automatically.
+            Upload the required hospitality datasets — the dashboard will ask you to confirm the column mapping before analysis starts.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -709,8 +723,16 @@ def landing_page():
     st.info("Upload all 3 files on the left to start: hotel booking data, arrivals/demand data, and public holidays data.")
 
 
-if hotel_raw is None:
+if hotel_raw is None or arrivals_raw is None or holidays_raw is None:
     landing_page()
+    missing = []
+    if hotel_raw is None:
+        missing.append("hotel booking data")
+    if arrivals_raw is None:
+        missing.append("arrivals / demand data")
+    if holidays_raw is None:
+        missing.append("public holidays data")
+    st.warning("Please upload all 3 required datasets before analysis starts: " + ", ".join(missing) + ".")
     st.stop()
 
 
@@ -723,14 +745,14 @@ def needs_mapping(session_key, df, schema):
     """Show mapping UI if user has never confirmed mapping for this file, or file changed."""
     return session_key not in st.session_state.get('confirmed_mappings', set())
 
-show_mapping = (
-    needs_mapping('hotel_mapping', hotel_raw, HOTEL_SCHEMA) or
-    (arrivals_raw is not None and needs_mapping('arrivals_mapping', arrivals_raw, ARRIVALS_SCHEMA)) or
-    (holidays_raw is not None and needs_mapping('holidays_mapping', holidays_raw, HOLIDAYS_SCHEMA))
-)
-
 if 'confirmed_mappings' not in st.session_state:
     st.session_state['confirmed_mappings'] = set()
+
+show_mapping = (
+    needs_mapping('hotel_mapping', hotel_raw, HOTEL_SCHEMA) or
+    needs_mapping('arrivals_mapping', arrivals_raw, ARRIVALS_SCHEMA) or
+    needs_mapping('holidays_mapping', holidays_raw, HOLIDAYS_SCHEMA)
+)
 
 # Add remapping button to sidebar
 with st.sidebar:
@@ -809,17 +831,15 @@ if show_mapping:
         )
 
         if submitted:
-            if hotel_mapping is None:
-                st.error("Please fix required hotel column mappings before continuing.")
+            if hotel_mapping is None or arrivals_mapping is None or holidays_mapping is None:
+                st.error("Please fix all required column mappings before continuing.")
             else:
                 st.session_state['final_hotel_mapping']    = hotel_mapping
                 st.session_state['final_arrivals_mapping'] = arrivals_mapping
                 st.session_state['final_holidays_mapping'] = holidays_mapping
                 st.session_state['confirmed_mappings'].add('hotel_mapping')
-                if arrivals_raw is not None:
-                    st.session_state['confirmed_mappings'].add('arrivals_mapping')
-                if holidays_raw is not None:
-                    st.session_state['confirmed_mappings'].add('holidays_mapping')
+                st.session_state['confirmed_mappings'].add('arrivals_mapping')
+                st.session_state['confirmed_mappings'].add('holidays_mapping')
                 st.rerun()
 
     st.stop()
