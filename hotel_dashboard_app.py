@@ -308,22 +308,22 @@ n_sources   = df['_source_file'].nunique()
 
 source_label = f"{n_sources} data source{'s' if n_sources > 1 else ''}" if n_sources > 1 else ""
 
-source_tag = (f"&nbsp;·&nbsp; <strong style='color:#22D47B'>{n_sources} data sources merged</strong>"
+source_tag = (f" · <strong style='color:#22D47B'>{n_sources} data sources merged</strong>"
               if n_sources > 1 else "")
 
-st.markdown(f"""
-<div style='margin-bottom:1.5rem;'>
-    <h1 style='color:#FFFFFF;font-size:28px;font-weight:800;margin-bottom:4px;'>
-        🏨 Hotel Revenue Intelligence
-    </h1>
-    <p style='color:#5577AA;font-size:14px;'>
-        Portugal Hospitality Market &nbsp;·&nbsp;
-        <strong style='color:#7ABAFF'>{total:,}</strong> bookings analysed
-        {source_tag}
-        &nbsp;·&nbsp; Auto-generated insights
-    </p>
-</div>
-""", unsafe_allow_html=True)
+header_html = (
+    "<div style='margin-bottom:1.5rem;'>"
+    "<h1 style='color:#FFFFFF;font-size:28px;font-weight:800;margin-bottom:4px;'>"
+    "🏨 Hotel Revenue Intelligence"
+    "</h1>"
+    "<p style='color:#5577AA;font-size:14px;'>"
+    f"Portugal Hospitality Market · <strong style='color:#7ABAFF'>{total:,}</strong> bookings analysed"
+    f"{source_tag}"
+    " · Auto-generated insights"
+    "</p>"
+    "</div>"
+)
+st.markdown(header_html, unsafe_allow_html=True)
 
 # ── KPI Row ───────────────────────────────────────────────
 k1, k2, k3, k4, k5 = st.columns(5)
