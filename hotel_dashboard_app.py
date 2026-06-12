@@ -43,7 +43,10 @@ div[data-testid="metric-container"] label {
     text-transform: uppercase;
     letter-spacing: 0.10em;
 }
-div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+div[data-testid="metric-container"] div[data-testid="stMetricValue"],
+div[data-testid="metric-container"] div[data-testid="stMetricValue"] > div,
+div[data-testid="stMetric"] [data-testid="stMetricValue"],
+[data-testid="stMetricValue"] {
     color: #FFFFFF !important;
     font-size: 32px !important;
     font-weight: 800 !important;
@@ -51,7 +54,8 @@ div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
     text-shadow: 0 0 20px rgba(74,158,255,0.3);
     line-height: 1.15 !important;
 }
-div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
+div[data-testid="metric-container"] div[data-testid="stMetricDelta"],
+[data-testid="stMetricDelta"] {
     font-size: 12px !important;
     font-weight: 500 !important;
 }
