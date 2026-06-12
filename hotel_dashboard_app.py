@@ -36,8 +36,12 @@ div[data-testid="metric-container"] {
     padding: 1.4rem 1.6rem;
     box-shadow: 0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04);
 }
-div[data-testid="metric-container"] label {
-    color: #7A9EC8 !important;
+div[data-testid="metric-container"] label,
+div[data-testid="metric-container"] [data-testid="stMetricLabel"],
+div[data-testid="metric-container"] [data-testid="stMetricLabel"] > div,
+[data-testid="stMetricLabel"],
+[data-testid="stMetricLabel"] p {
+    color: #FFFFFF !important;
     font-size: 11px !important;
     font-weight: 600 !important;
     text-transform: uppercase;
