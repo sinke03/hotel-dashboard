@@ -102,18 +102,49 @@ SEASON_MAP = {m: s for m,s in zip(MONTH_ORDER,
 
 # ── DATA LOADING ──────────────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
-def load_data():
-    hotel    = pd.read_excel("/mnt/user-data/uploads/cleaned_hotel_data.xlsx")
-    arrivals = pd.read_excel("/mnt/user-data/uploads/cleaned_portugal_arrivals.xlsx")
+def load_data(hotel_bytes, arrivals_bytes):
+    hotel    = pd.read_excel(io.BytesIO(hotel_bytes))
+    arrivals = pd.read_excel(io.BytesIO(arrivals_bytes))
 
     hotel['confirmed_rev'] = hotel['estimated_revenue'] * (1 - hotel['is_canceled'])
     hotel['lost_rev']      = hotel['estimated_revenue'] * hotel['is_canceled']
     hotel['season']        = hotel['arrival_month_name'].map(SEASON_MAP)
-    hotel['arrival_month_name'] = pd.Categorical(hotel['arrival_month_name'], MONTH_ORDER, ordered=True)
+    hotel['arrival_month_name'] = pd.Categorical(
+        hotel['arrival_month_name'], MONTH_ORDER, ordered=True)
 
     return hotel, arrivals
 
-hotel, arrivals = load_data()
+# ── SIDEBAR FILE UPLOAD ───────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("## 🏨 Hotel Revenue Intelligence")
+    st.markdown("---")
+    st.markdown("### 📂 Upload Data Files")
+    st.caption("Upload the two required Excel files to generate the analysis.")
+    hotel_file    = st.file_uploader("Hotel data (cleaned_hotel_data.xlsx)",
+                                     type=["xlsx","xls","csv"], key="hotel")
+    arrivals_file = st.file_uploader("Arrivals data (cleaned_portugal_arrivals.xlsx)",
+                                     type=["xlsx","xls","csv"], key="arrivals")
+
+if not hotel_file or not arrivals_file:
+    st.markdown("""
+    <div class='hero-banner' style='text-align:center;padding:3rem 2rem'>
+      <div style='font-size:48px;margin-bottom:1rem'>🏨</div>
+      <div style='font-size:22px;font-weight:800;color:#E0E6F0;margin-bottom:8px'>
+        Hotel Revenue Intelligence
+      </div>
+      <div style='font-size:14px;color:#5577AA;margin-bottom:1.5rem'>
+        Revenue Optimization Analysis — Portugal Hospitality Market
+      </div>
+      <div style='font-size:13px;color:#8899BB;line-height:1.8'>
+        👈 Upload both files from the <strong style='color:#4A9EFF'>sidebar</strong> to begin:<br>
+        <strong style='color:#E0E6F0'>1.</strong> cleaned_hotel_data.xlsx<br>
+        <strong style='color:#E0E6F0'>2.</strong> cleaned_portugal_arrivals.xlsx
+      </div>
+    </div>""", unsafe_allow_html=True)
+    st.stop()
+
+with st.spinner("Loading data…"):
+    hotel, arrivals = load_data(hotel_file.getvalue(), arrivals_file.getvalue())
 
 # ── HEADER ────────────────────────────────────────────────────────────────────
 st.markdown("""
