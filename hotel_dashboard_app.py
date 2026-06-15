@@ -1469,107 +1469,112 @@ def render_cross_dataset_adaptive_analysis(std: pd.DataFrame, datasets: List[Dic
 
 
 # ==========================================================
-# PRESENTATION ANALYSIS — Portugal Hospitality Market
-# All data extracted directly from PowerBI slides
+# TAB 1 — OBJECTIVE  (slide 6)
 # ==========================================================
-def render_presentation_analysis():
+def render_tab_objective():
     st.markdown("""
     <div style='background:linear-gradient(135deg,#0D1628,#0A1A35);border:1px solid #1A2A45;
     border-radius:16px;padding:1.4rem 1.8rem;margin-bottom:1.5rem;'>
-        <div style='font-size:20px;font-weight:800;color:#E0E6F0;margin-bottom:6px;'>
-            📊 Hotel Revenue Intelligence — Portugal Hospitality Market
+        <div style='font-size:20px;font-weight:800;color:#E0E6F0;margin-bottom:4px;'>
+            🏨 Hotel Revenue Intelligence
         </div>
-        <div style='font-size:13px;color:#5577AA;line-height:1.6;'>
-            Revenue Optimization Analysis · Big Data Analytics Dept · Strateq Systems · 2015–2017 avg
+        <div style='font-size:13px;color:#5577AA;'>
+            Revenue Optimization Analysis for Portugal Hospitality Market · 2015–2017 avg
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── OBJECTIVE ─────────────────────────────────────────────────────
-    st.markdown('<div class="section-header">🎯 Objective</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Objective</div>', unsafe_allow_html=True)
     o1, o2, o3 = st.columns(3)
-    for col, num, title, desc in zip(
+    for col, num, color, title, desc in zip(
         [o1, o2, o3],
         ["01", "02", "03"],
-        ["Reduce Cancellation Revenue Loss", "Price for Real Demand Year-Round", "Acquire Reliable, Retain Loyal Guest"],
-        ["Stop losing $1 for every $2 earned to booking cancellations",
-         "Extend dynamic pricing beyond summer peak only",
-         "Shift focus from booking volume to guest quality"],
+        [GREEN, CYAN, PINK],
+        ["Reduce Cancellation Revenue Loss",
+         "Price for Real Demand Year-Round",
+         "Acquire Reliable, Retain Loyal Guest"],
+        ["Stop losing $1 for every $2 earned to booking cancellations.",
+         "Extend dynamic pricing beyond the summer peak period.",
+         "Shift focus from booking volume to reliable guest quality."],
     ):
         with col:
             st.markdown(f"""
-            <div class='insight-card' style='border-left:4px solid #4A9EFF;min-height:110px'>
-                <div style='font-size:22px;font-weight:800;color:#4A9EFF;margin-bottom:4px'>{num}</div>
-                <div style='font-size:13px;font-weight:700;color:#E0E6F0;margin-bottom:6px'>{title}</div>
+            <div class='insight-card' style='border-left:4px solid {color};min-height:130px'>
+                <div style='font-size:26px;font-weight:800;color:{color};margin-bottom:6px'>{num}</div>
+                <div style='font-size:13px;font-weight:700;color:#E0E6F0;margin-bottom:8px'>{title}</div>
                 <div class='insight-desc'>{desc}</div>
             </div>
             """, unsafe_allow_html=True)
 
-    st.markdown("---")
+    st.markdown('<div class="section-header">Agenda</div>', unsafe_allow_html=True)
+    for num, title in [("01","Objective"),("02","Pain Points"),("03","Data-Driven Insights"),("04","Strategic Recommendations"),("05","Key Takeaway")]:
+        st.markdown(f"<p style='color:#C8D8F0;font-size:13px;margin-bottom:6px'><span style='color:#4A9EFF;font-weight:700'>{num}</span> &nbsp; {title}</p>", unsafe_allow_html=True)
 
-    # ── PAIN POINT 1: CANCELLATION LEAKAGE ────────────────────────────
+
+# ==========================================================
+# TAB 2 — PAIN POINT 1: CANCELLATION  (slides 7–11 + rec 1)
+# ==========================================================
+def render_tab_cancellation(std: pd.DataFrame):
     st.markdown("""
-    <div style='font-size:16px;font-weight:700;color:#FF5A5A;margin:1.5rem 0 0.5rem'>
+    <div style='font-size:18px;font-weight:800;color:#FF5A5A;margin-bottom:1rem'>
         🚨 Pain Point 1 — Money Out the Door
     </div>
+    <p style='color:#5577AA;font-size:13px;margin-bottom:1.5rem'>
+        $11.31M lost from booking cancellations
+    </p>
     """, unsafe_allow_html=True)
 
-    k1, k2, k3 = st.columns(3)
-    k1.metric("✅ Confirmed Revenue", "$22.42M", help="Total confirmed bookings revenue 2015–2017 avg")
-    k2.metric("❌ Revenue Lost", "$11.31M", delta="-33.5% of total", delta_color="inverse", help="Lost to booking cancellations")
-    k3.metric("📉 Cancellation Rate", "28.36%", help="Year-round cancellation rate — not seasonal")
+    # ── KPI row ────────────────────────────────────────────────────
+    # Try to compute from uploaded data; fall back to slide values
+    commercial = get_commercial_df(std)
+    has_cancel = "cancelled_flag" in commercial.columns and commercial["cancelled_flag"].notna().any()
 
-    st.markdown('<div class="section-header">Confirmed Revenue vs Cancellation Loss (Monthly, 2015–2017 avg)</div>', unsafe_allow_html=True)
+    if has_cancel and "revenue" in commercial.columns:
+        conf_rev   = commercial["confirmed_revenue"].sum(skipna=True)
+        lost_rev   = commercial["lost_revenue"].sum(skipna=True)
+        cancel_pct = safe_div(commercial["cancelled_flag"].sum(skipna=True), len(commercial)) * 100
+        note = "📌 Computed from your uploaded data"
+    else:
+        conf_rev, lost_rev, cancel_pct = 22_420_000, 11_310_000, 28.36
+        note = "📌 Values from PowerBI presentation (2015–2017 avg)"
+
+    k1, k2, k3 = st.columns(3)
+    k1.metric("✅ Confirmed Revenue", money(conf_rev))
+    k2.metric("❌ Revenue Lost",      money(lost_rev))
+    k3.metric("📉 Cancellation Rate", pct(cancel_pct))
+    st.caption(note)
+
+    # ── Chart 1: Confirmed vs Lost by month ────────────────────────
+    st.markdown('<div class="section-header">Confirmed Revenue vs Cancellation Loss — monthly (2015–2017 avg)</div>', unsafe_allow_html=True)
+
     months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-    confirmed_rev = [0.62, 0.85, 1.10, 1.40, 1.60, 2.20, 3.50, 4.80, 1.90, 1.20, 0.90, 0.95]
-    lost_rev      = [0.22, 0.28, 0.35, 0.48, 0.52, 0.72, 1.10, 1.55, 0.62, 0.42, 0.30, 0.32]
+
+    # Prefer real data if monthly breakdown is available
+    monthly = monthly_rollup(commercial) if has_cancel else pd.DataFrame()
+    if not monthly.empty and "confirmed_revenue" in monthly.columns and "lost_revenue" in monthly.columns:
+        conf_m = monthly["confirmed_revenue"].tolist()
+        lost_m = monthly["lost_revenue"].tolist()
+        labels = (monthly["month_name"].str[:3] + " " + monthly["year"].astype(int).astype(str)).tolist()
+    else:
+        conf_m = [0.62,0.85,1.10,1.40,1.60,2.20,3.50,4.80,1.90,1.20,0.90,0.95]
+        lost_m = [0.22,0.28,0.35,0.48,0.52,0.72,1.10,1.55,0.62,0.42,0.30,0.32]
+        conf_m = [v*1_000_000 for v in conf_m]
+        lost_m = [v*1_000_000 for v in lost_m]
+        labels = months
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(name="Confirmed Revenue", x=months, y=confirmed_rev, marker_color=BLUE, opacity=0.85))
-    fig.add_trace(go.Bar(name="Revenue Lost",      x=months, y=lost_rev,      marker_color=RED,  opacity=0.80))
-    fig.update_layout(**merged_layout(360, barmode="group", yaxis=dict(tickprefix="$", ticksuffix="M", gridcolor="#1A2A45")))
+    fig.add_trace(go.Bar(name="Confirmed Revenue", x=labels, y=conf_m, marker_color=BLUE, opacity=0.85))
+    fig.add_trace(go.Bar(name="Revenue Lost",      x=labels, y=lost_m, marker_color=RED,  opacity=0.80))
+    fig.update_layout(**merged_layout(360, barmode="group", yaxis=dict(tickprefix="$", gridcolor="#1A2A45")))
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    col1, col2, col3 = st.columns(3)
-    for col, color, title, text in zip(
-        [col1, col2, col3],
-        [RED, AMBER, RED],
-        ["$11.31M lost", "28% cancellation rate runs year-round", "August: peak exposure"],
-        ["Every $2 earned, $1 is lost to cancellations — a structural problem, not seasonal.",
-         "The cancellation rate is consistent across all 12 months, not a summer anomaly.",
-         "August has the highest revenue AND the highest cancellation loss simultaneously."],
-    ):
-        with col:
-            st.markdown(f"""
-            <div class='insight-card' style='border-left:4px solid {color}'>
-                <div class='insight-title'>{title}</div>
-                <div class='insight-desc'>{text}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    # Cancellation by deposit type
-    st.markdown('<div class="section-header">Cancel Rate by Deposit Type vs Revenue Exposure</div>', unsafe_allow_html=True)
-    deposit_data = {
-        "Deposit Type":       ["No Deposit",    "Refundable", "Non Refund"],
-        "Cancellation Rate":  [27.53,           28.26,        94.62],
-        "Revenue Lost ($)":   [11_067_545,      14_390,       230_210],
-        "Total Bookings":     [79_100,          92,           986],
-        "Avg ADR ($)":        [105.15,          67.98,        79.73],
-    }
-    deposit_df = pd.DataFrame(deposit_data)
-    fig2 = px.bar(deposit_df, x="Deposit Type", y="Cancellation Rate",
-                  color="Cancellation Rate",
-                  color_continuous_scale=[[0, GREEN], [0.3, AMBER], [1, RED]],
-                  text=deposit_df["Cancellation Rate"].map(pct))
-    fig2.update_traces(textposition="outside", textfont=dict(color="#E0E6F0"))
-    fig2.update_layout(**merged_layout(340, yaxis=dict(ticksuffix="%", gridcolor="#1A2A45", range=[0, 110]), coloraxis_showscale=False))
-    st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
-    st.dataframe(deposit_df, use_container_width=True, hide_index=True)
-
     for color, title, text in [
-        (RED,   "Non-refundable bookings cancel at nearly 100%",       "94.62% of non-refundable bookings cancel — the label does not protect revenue."),
-        (AMBER, "No-deposit bookings create the largest exposure",      "79,100 bookings with no deposit lost $11.07M — the biggest absolute risk pool."),
-        (GREEN, "'Non-refundable' does not mean confirmed revenue",     "Reframe: treat non-refundable OTA bookings as unconfirmed until pre-arrival deposit is collected."),
+        (RED,   "$11.31M lost — every $2 earned, $1 is lost to cancellations",
+                "This is a structural revenue problem, not a seasonal one. The ratio stays consistent all year."),
+        (AMBER, "28% cancellation rate runs year-round, not seasonal",
+                "The cancellation rate is consistent across all 12 months. Seasonal policy changes alone won't fix it."),
+        (RED,   "August: highest revenue AND highest loss — peak exposure",
+                "The best-performing month is simultaneously the highest-risk month for revenue leakage."),
     ]:
         st.markdown(f"""
         <div class='insight-card' style='border-left:4px solid {color}'>
@@ -1578,50 +1583,129 @@ def render_presentation_analysis():
         </div>
         """, unsafe_allow_html=True)
 
-    # Strategic Recommendation 1
+    # ── Chart 2: Cancel rate by deposit type ───────────────────────
+    st.markdown('<div class="section-header">Cancel Rate by Deposit Type vs Revenue Exposure</div>', unsafe_allow_html=True)
+
+    if has_cancel and "deposit_policy" in commercial.columns:
+        dep_grp = group_quality(commercial, "deposit_policy", min_rows=1)
+        if not dep_grp.empty and "cancel_rate" in dep_grp.columns:
+            dep_labels  = dep_grp["deposit_policy"].tolist()
+            dep_cancel  = dep_grp["cancel_rate"].tolist()
+            dep_lost    = dep_grp["lost_revenue"].tolist() if "lost_revenue" in dep_grp.columns else [0]*len(dep_labels)
+            dep_bookings= dep_grp["rows"].tolist()
+            dep_adr     = dep_grp["avg_adr"].tolist() if "avg_adr" in dep_grp.columns else [None]*len(dep_labels)
+        else:
+            dep_labels, dep_cancel, dep_lost, dep_bookings, dep_adr = (
+                ["No Deposit","Refundable","Non Refund"],
+                [27.53, 28.26, 94.62],
+                [11_067_545, 14_390, 230_210],
+                [79100, 92, 986],
+                [105.15, 67.98, 79.73],
+            )
+    else:
+        dep_labels, dep_cancel, dep_lost, dep_bookings, dep_adr = (
+            ["No Deposit","Refundable","Non Refund"],
+            [27.53, 28.26, 94.62],
+            [11_067_545, 14_390, 230_210],
+            [79100, 92, 986],
+            [105.15, 67.98, 79.73],
+        )
+
+    dep_df = pd.DataFrame({
+        "Deposit Type":       dep_labels,
+        "Cancellation Rate":  dep_cancel,
+        "Revenue Lost":       [money(v) for v in dep_lost],
+        "Total Bookings":     dep_bookings,
+        "Avg ADR":            [f"${v:,.2f}" if v else "—" for v in dep_adr],
+    })
+    fig2 = px.bar(dep_df, x="Deposit Type", y="Cancellation Rate",
+                  color="Cancellation Rate",
+                  color_continuous_scale=[[0,GREEN],[0.3,AMBER],[1,RED]],
+                  text=[pct(v) for v in dep_cancel])
+    fig2.update_traces(textposition="outside", textfont=dict(color="#E0E6F0"))
+    fig2.update_layout(**merged_layout(340, yaxis=dict(ticksuffix="%", range=[0,115], gridcolor="#1A2A45"), coloraxis_showscale=False))
+    st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
+    st.dataframe(dep_df, use_container_width=True, hide_index=True)
+
+    for color, title, text in [
+        (RED,   "Non-refundable bookings cancel at nearly 100%",
+                "94.62% of non-refundable bookings cancel. The label does not protect revenue."),
+        (AMBER, "No-deposit bookings create the largest revenue exposure",
+                "79,100 bookings with no deposit account for $11.07M in lost revenue — the biggest absolute risk pool."),
+        (GREEN, "The label 'non-refundable' does not mean confirmed revenue",
+                "Treat OTA non-refundable bookings as unconfirmed until a pre-arrival deposit is actually collected."),
+    ]:
+        st.markdown(f"""
+        <div class='insight-card' style='border-left:4px solid {color}'>
+            <div class='insight-title'>{title}</div>
+            <div class='insight-desc'>{text}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
     st.markdown("""
     <div class='insight-card' style='background:linear-gradient(135deg,#0A1E10,#0D2818);border:1px solid #1A5020;margin-top:0.5rem'>
-        <div style='font-size:13px;font-weight:700;color:#22D47B;margin-bottom:8px'>💡 Strategic Recommendation 1 — Flag high-risk bookings before they confirm</div>
+        <div style='font-size:13px;font-weight:700;color:#22D47B;margin-bottom:8px'>
+            💡 Strategic Recommendation 1 — Flag high-risk bookings before they confirm
+        </div>
         <div class='insight-desc'>
             • <strong>Prior cancellers → mandatory deposit</strong> before confirmation is accepted<br>
             • <strong>OTA non-refundable → treat as unconfirmed</strong> until deposit is verified<br>
-            • Flag high-risk guests in PMS and apply stricter deposit terms automatically
+            • Flag data in PMS and apply stricter deposit terms to flagged profiles automatically
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("---")
 
-    # ── PAIN POINT 2: PRICING GAP ─────────────────────────────────────
+# ==========================================================
+# TAB 3 — PAIN POINT 2: PRICING / DEMAND  (slides 14–18 + rec 2)
+# ==========================================================
+def render_tab_pricing(std: pd.DataFrame):
     st.markdown("""
-    <div style='font-size:16px;font-weight:700;color:#FFB830;margin:1.5rem 0 0.5rem'>
-        💰 Pain Point 2 — Missing the Moment: Rooms sold below peak demand value
+    <div style='font-size:18px;font-weight:800;color:#FFB830;margin-bottom:1rem'>
+        💰 Pain Point 2 — Missing the Moment
     </div>
+    <p style='color:#5577AA;font-size:13px;margin-bottom:1.5rem'>
+        Rooms sold below peak demand value
+    </p>
     """, unsafe_allow_html=True)
 
+    months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+    # ── Chart 1: Market Capture Rate vs ADR ────────────────────────
     st.markdown('<div class="section-header">Market Capture Rate vs Average Daily Rate (Jan–Dec, 2015–2017)</div>', unsafe_allow_html=True)
 
-    capture_rate = [0.80, 1.05, 1.35, 1.30, 1.35, 1.25, 1.55, 1.80, 1.10, 1.15, 0.90, 0.85]
-    avg_adr_vals = [75,   80,   85,   88,   100,  110,  130,  150,  120,  95,   82,   85  ]
+    commercial = get_commercial_df(std)
+    monthly = monthly_business_bridge(std)
+    has_both = not monthly.empty and "avg_adr" in monthly.columns and "demand" in monthly.columns
 
-    fig3 = make_subplots(specs=[[{"secondary_y": True}]])
-    fig3.add_trace(go.Bar(name="Market Capture Rate (%)",
-                          x=months, y=capture_rate,
-                          marker_color=CYAN, opacity=0.55), secondary_y=False)
-    fig3.add_trace(go.Scatter(name="Avg ADR ($)",
-                              x=months, y=avg_adr_vals,
-                              mode="lines+markers",
-                              line=dict(color=AMBER, width=3),
-                              marker=dict(size=8)), secondary_y=True)
-    fig3.update_yaxes(title_text="Market Capture Rate (%)", ticksuffix="%", secondary_y=False)
-    fig3.update_yaxes(title_text="Average Daily Rate ($)", tickprefix="$", secondary_y=True)
-    fig3.update_layout(**merged_layout(380))
-    st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
+    if has_both:
+        labels       = (monthly["month_name"].str[:3] + " " + monthly["year"].astype(int).astype(str)).tolist()
+        cap_vals     = (monthly["bookings"] / monthly["demand"] * 100).tolist() if "bookings" in monthly.columns else [None]*len(labels)
+        adr_vals     = monthly["avg_adr"].tolist()
+    else:
+        labels   = months
+        cap_vals = [0.80,1.05,1.35,1.30,1.35,1.25,1.55,1.80,1.10,1.15,0.90,0.85]
+        adr_vals = [75,  80,  85,  88,  100, 110, 130, 150, 120, 95,  82,  85 ]
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Bar(name="Market Capture Rate (%)",
+                         x=labels, y=cap_vals, marker_color=CYAN, opacity=0.55), secondary_y=False)
+    fig.add_trace(go.Scatter(name="Avg ADR ($)",
+                             x=labels, y=adr_vals,
+                             mode="lines+markers", line=dict(color=AMBER, width=3), marker=dict(size=8)),
+                  secondary_y=True)
+    fig.update_yaxes(title_text="Market Capture Rate (%)", ticksuffix="%", secondary_y=False)
+    fig.update_yaxes(title_text="Avg ADR ($)", tickprefix="$", secondary_y=True)
+    fig.update_layout(**merged_layout(380))
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     for color, title, text in [
-        (RED,   "March–April ADR is $30–40 lower than June",           "Capture rate in Mar–Apr matches June but ADR is $30–40 lower — demand is being under-priced in the shoulder season."),
-        (AMBER, "Dynamic pricing responds to summer only",              "Rates only rise materially from July–August. Pricing logic ignores actual capture signals in spring."),
-        (GREEN, "Sufficient demand in shoulder season goes uncaptured", "March and April have strong market capture rates. Revenue opportunity exists but is not being realized."),
+        (RED,   "March–April capture rate matches June, but ADR is $30–40 lower",
+                "Demand is there in shoulder season — but pricing hasn't responded. Revenue opportunity is being left on the table."),
+        (AMBER, "Dynamic pricing responds to summer only, not the full year",
+                "Rate logic only kicks in for July–August. Spring and early autumn are systematically under-priced."),
+        (GREEN, "Sufficient demand exists in shoulder season but revenue is not being captured",
+                "March and April have strong market capture rates equal to June. The pricing system isn't reflecting this signal."),
     ]:
         st.markdown(f"""
         <div class='insight-card' style='border-left:4px solid {color}'>
@@ -1630,29 +1714,40 @@ def render_presentation_analysis():
         </div>
         """, unsafe_allow_html=True)
 
+    # ── Chart 2: Season performance ────────────────────────────────
     st.markdown('<div class="section-header">Season Performance — Revenue Distribution</div>', unsafe_allow_html=True)
+
     season_data = {
-        "Season":              ["Summer",        "Spring",       "Autumn",       "Winter"],
-        "Total Revenue ($M)":  [16.32,           7.77,           5.78,           3.86],
-        "Share (%)":           [48.38,           23.04,          17.14,          11.44],
-        "Avg ADR ($)":         [137.07,          100.00,         95.00,          82.00],
-        "Cancellation Rate":   ["32.47%",        "26.00%",       "25.00%",       "24.00%"],
-        "Total Arrivals":      ["13,825,240",    "~7M",          "~5.5M",        "~3.5M"],
+        "Season":             ["Summer",   "Spring",  "Autumn",  "Winter"],
+        "Total Revenue ($M)": [16.32,      7.77,      5.78,      3.86],
+        "Share (%)":          [48.38,      23.04,     17.14,     11.44],
+        "Avg ADR ($)":        [137.07,     100.00,    95.00,     82.00],
+        "Cancel Rate":        ["32.47%",   "26.00%",  "25.00%",  "24.00%"],
+        "Total Arrivals":     ["13,825,240","~7M",    "~5.5M",   "~3.5M"],
     }
     season_df = pd.DataFrame(season_data)
-    fig4 = px.pie(season_df, values="Total Revenue ($M)", names="Season",
-                  hole=0.52,
-                  color_discrete_sequence=[CYAN, PINK, AMBER, BLUE],
-                  custom_data=["Share (%)", "Avg ADR ($)"])
-    fig4.update_traces(textinfo="percent+label", textfont_color="white",
-                       hovertemplate="<b>%{label}</b><br>Revenue: $%{value}M<br>Share: %{customdata[0]}%<br>Avg ADR: $%{customdata[1]}<extra></extra>")
-    fig4.update_layout(**merged_layout(360))
-    st.plotly_chart(fig4, use_container_width=True, config={"displayModeBar": False})
+
+    # Try real data if season column exists
+    if "season" in std.columns and std["season"].notna().any() and "revenue" in std.columns:
+        real_season = std.groupby("season")["revenue"].sum().reset_index()
+        real_season.columns = ["Season","Total Revenue ($M)"]
+        real_season["Total Revenue ($M)"] = real_season["Total Revenue ($M)"] / 1_000_000
+        fig2 = px.pie(real_season, values="Total Revenue ($M)", names="Season",
+                      hole=0.52, color_discrete_sequence=[CYAN, PINK, AMBER, BLUE])
+    else:
+        fig2 = px.pie(season_df, values="Total Revenue ($M)", names="Season",
+                      hole=0.52, color_discrete_sequence=[CYAN, PINK, AMBER, BLUE])
+
+    fig2.update_traces(textinfo="percent+label", textfont_color="white")
+    fig2.update_layout(**merged_layout(360))
+    st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
     st.dataframe(season_df, use_container_width=True, hide_index=True)
 
     for color, title, text in [
-        (CYAN,  "Summer generates 48% of annual revenue in 3 months",  "$16.32M from Jun–Aug alone. Revenue is heavily concentrated and vulnerable to any demand shift."),
-        (RED,   "Autumn + Winter combined contribute less than 30%",    "$5.78M + $3.86M = $9.64M (28.6%). Both seasons are significantly under-priced relative to actual visitor demand."),
+        (CYAN, "Summer generates 48% of annual revenue in just 3 months",
+               "$16.32M from Jun–Aug alone. Revenue is heavily concentrated and vulnerable to any demand shift."),
+        (RED,  "Autumn + Winter combined contribute less than 30%",
+               "$5.78M + $3.86M = $9.64M (28.6%). Both seasons are under-priced relative to actual visitor demand."),
     ]:
         st.markdown(f"""
         <div class='insight-card' style='border-left:4px solid {color}'>
@@ -1663,7 +1758,9 @@ def render_presentation_analysis():
 
     st.markdown("""
     <div class='insight-card' style='background:linear-gradient(135deg,#1A1205,#251A05);border:1px solid #503A05;margin-top:0.5rem'>
-        <div style='font-size:13px;font-weight:700;color:#FFB830;margin-bottom:8px'>💡 Strategic Recommendation 2 — Reprice March–April to match real demand</div>
+        <div style='font-size:13px;font-weight:700;color:#FFB830;margin-bottom:8px'>
+            💡 Strategic Recommendation 2 — Reprice March–April to match real demand
+        </div>
         <div class='insight-desc'>
             • <strong>Extend dynamic pricing beyond summer</strong> — activate rate logic for Mar–Jun and Sep–Oct<br>
             • <strong>Match ADR to capture rate, not season assumption</strong> — let actual demand signal pricing<br>
@@ -1672,43 +1769,66 @@ def render_presentation_analysis():
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("---")
 
-    # ── PAIN POINT 3: WRONG GUEST MIX ─────────────────────────────────
+# ==========================================================
+# TAB 4 — PAIN POINT 3: GUEST / MARKET MIX  (slides 21–25 + rec 3)
+# ==========================================================
+def render_tab_guest_mix(std: pd.DataFrame):
     st.markdown("""
-    <div style='font-size:16px;font-weight:700;color:#A855F7;margin:1.5rem 0 0.5rem'>
-        🎯 Pain Point 3 — Aiming at the Wrong Guests: Ignoring guests who actually stay
+    <div style='font-size:18px;font-weight:800;color:#A855F7;margin-bottom:1rem'>
+        🎯 Pain Point 3 — Aiming at the Wrong Guests
     </div>
+    <p style='color:#5577AA;font-size:13px;margin-bottom:1.5rem'>
+        Ignoring the guests who actually stay
+    </p>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="section-header">Top 8 Source Markets — Confirmed Revenue vs Cancellation Rate</div>', unsafe_allow_html=True)
-    market_data = {
-        "Country":              ["PRT",  "GBR",  "FRA",  "ESP",  "DEU",  "IRL",  "ITA",  "BEL"],
-        "Confirmed Rev ($M)":   [4.30,   3.80,   2.60,   2.10,   1.70,   1.55,   1.10,   1.05],
-        "Cancellation Rate (%)": [38.0,  22.0,   23.5,   27.0,   21.0,   25.0,   38.5,   20.0],
-    }
-    market_df = pd.DataFrame(market_data)
+    commercial = get_commercial_df(std)
 
-    fig5 = make_subplots(specs=[[{"secondary_y": True}]])
-    fig5.add_trace(go.Bar(name="Confirmed Revenue ($M)",
-                          x=market_df["Country"], y=market_df["Confirmed Rev ($M)"],
-                          marker_color=CYAN, opacity=0.75), secondary_y=False)
-    fig5.add_trace(go.Scatter(name="Cancellation Rate (%)",
-                              x=market_df["Country"], y=market_df["Cancellation Rate (%)"],
-                              mode="lines+markers",
-                              line=dict(color=RED, width=3),
-                              marker=dict(size=9)), secondary_y=True)
-    fig5.update_yaxes(title_text="Confirmed Revenue ($M)", tickprefix="$", ticksuffix="M", secondary_y=False)
-    fig5.update_yaxes(title_text="Cancellation Rate (%)", ticksuffix="%", secondary_y=True,
-                      range=[15, 45])
-    fig5.update_layout(**merged_layout(380))
-    st.plotly_chart(fig5, use_container_width=True, config={"displayModeBar": False})
-    st.dataframe(market_df, use_container_width=True, hide_index=True)
+    # ── Chart 1: Source markets confirmed revenue vs cancel rate ───
+    st.markdown('<div class="section-header">Top 8 Source Markets — Confirmed Revenue vs Cancellation Rate</div>', unsafe_allow_html=True)
+
+    has_country = "country" in commercial.columns and commercial["country"].notna().any()
+    if has_country and "cancelled_flag" in commercial.columns:
+        mkt = group_quality(commercial, "country", min_rows=5).head(8)
+        if not mkt.empty and "cancel_rate" in mkt.columns and "revenue" in mkt.columns:
+            mkt_labels  = mkt["country"].tolist()
+            mkt_rev     = (mkt["revenue"] / 1_000_000).tolist()
+            mkt_cancel  = mkt["cancel_rate"].tolist()
+        else:
+            has_country = False
+
+    if not has_country:
+        mkt_labels  = ["PRT","GBR","FRA","ESP","DEU","IRL","ITA","BEL"]
+        mkt_rev     = [4.30, 3.80, 2.60, 2.10, 1.70, 1.55, 1.10, 1.05]
+        mkt_cancel  = [38.0, 22.0, 23.5, 27.0, 21.0, 25.0, 38.5, 20.0]
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Bar(name="Confirmed Revenue ($M)",
+                         x=mkt_labels, y=mkt_rev,
+                         marker_color=CYAN, opacity=0.75), secondary_y=False)
+    fig.add_trace(go.Scatter(name="Cancellation Rate (%)",
+                             x=mkt_labels, y=mkt_cancel,
+                             mode="lines+markers",
+                             line=dict(color=RED, width=3), marker=dict(size=9)),
+                  secondary_y=True)
+    fig.update_yaxes(title_text="Confirmed Revenue ($M)", tickprefix="$", ticksuffix="M", secondary_y=False)
+    fig.update_yaxes(title_text="Cancellation Rate (%)", ticksuffix="%", secondary_y=True, range=[15, 45])
+    fig.update_layout(**merged_layout(380))
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    mkt_df = pd.DataFrame({"Country": mkt_labels,
+                            "Confirmed Rev ($M)": [f"${v:.2f}M" for v in mkt_rev],
+                            "Cancellation Rate": [pct(v) for v in mkt_cancel]})
+    st.dataframe(mkt_df, use_container_width=True, hide_index=True)
 
     for color, title, text in [
-        (RED,    "Portugal: top revenue source, highest cancel rate (38%)",     "PRT generates the most confirmed revenue but also cancels at 38% — the highest of all markets. High volume masks high risk."),
-        (GREEN,  "Germany & Belgium: most reliable at 20–22%",                  "DEU and BEL cancel at only 20–22%, making every booking more reliable. Lower volume but stronger effective revenue per booking."),
-        (AMBER,  "Shifting to low-cancellation markets improves net revenue",   "Investing more in DEU, BEL and GBR acquisition reduces leakage without needing to increase total booking volume."),
+        (RED,    "Portugal: top revenue source, highest cancel rate at 38%",
+                 "PRT generates the most confirmed revenue but also cancels at 38% — the highest of all source markets. High volume masks high risk."),
+        (GREEN,  "Germany & Belgium cancel at only 20–22% — the most reliable markets",
+                 "DEU and BEL cancel at only 20–22%, making every booking far more reliable. Lower volume but stronger effective revenue per booking."),
+        (AMBER,  "Shifting investment toward low-cancellation markets improves effective revenue per booking",
+                 "Investing more in DEU, BEL and GBR acquisition reduces leakage without needing to increase total booking volume."),
     ]:
         st.markdown(f"""
         <div class='insight-card' style='border-left:4px solid {color}'>
@@ -1717,25 +1837,38 @@ def render_presentation_analysis():
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown('<div class="section-header">Highest-Risk Guest Segments by Cancel Rate</div>', unsafe_allow_html=True)
-    segment_data = {
-        "Risk Segment":        ["Prior canceller · Any channel", "Online TA · Non-refundable",
-                                "Online TA · No deposit · Lead >90d", "Other",
-                                "Groups · Holiday month", "Corp / GDS · Short lead", "Direct · Repeat guest"],
-        "Cancel Rate (%)":     [98, 95, 65, 48, 44, 38, 12],
-    }
-    seg_df = pd.DataFrame(segment_data).sort_values("Cancel Rate (%)")
-    fig6 = px.bar(seg_df, x="Cancel Rate (%)", y="Risk Segment", orientation="h",
+    # ── Chart 2: Highest-risk guest segments ───────────────────────
+    st.markdown('<div class="section-header">Highest-Risk Guest Segments by Cancellation Rate</div>', unsafe_allow_html=True)
+
+    has_seg = "segment" in commercial.columns and "cancelled_flag" in commercial.columns
+    if has_seg:
+        seg_grp = group_quality(commercial, "segment", min_rows=5)
+        if not seg_grp.empty and "cancel_rate" in seg_grp.columns:
+            seg_labels  = seg_grp["segment"].tolist()
+            seg_cancel  = seg_grp["cancel_rate"].tolist()
+        else:
+            has_seg = False
+
+    if not has_seg:
+        seg_labels = ["Prior canceller · Any channel", "Online TA · Non-refundable",
+                      "Online TA · No deposit · Lead >90d", "Other",
+                      "Groups · Holiday month", "Corp / GDS · Short lead", "Direct · Repeat guest"]
+        seg_cancel = [98, 95, 65, 48, 44, 38, 12]
+
+    seg_df = pd.DataFrame({"Risk Segment": seg_labels, "Cancel Rate (%)": seg_cancel}).sort_values("Cancel Rate (%)")
+    fig2 = px.bar(seg_df, x="Cancel Rate (%)", y="Risk Segment", orientation="h",
                   color="Cancel Rate (%)",
-                  color_continuous_scale=[[0, GREEN], [0.15, GREEN], [0.4, AMBER], [0.7, RED], [1, "#FF0000"]],
-                  text=seg_df["Cancel Rate (%)"].map(lambda x: f"{x}%"))
-    fig6.update_traces(textposition="outside", textfont=dict(color="#E0E6F0"))
-    fig6.update_layout(**merged_layout(400, xaxis=dict(ticksuffix="%", range=[0, 115], gridcolor="#1A2A45"), coloraxis_showscale=False))
-    st.plotly_chart(fig6, use_container_width=True, config={"displayModeBar": False})
+                  color_continuous_scale=[[0,GREEN],[0.15,GREEN],[0.4,AMBER],[0.7,RED],[1,"#FF0000"]],
+                  text=[f"{v}%" for v in seg_df["Cancel Rate (%)"].tolist()])
+    fig2.update_traces(textposition="outside", textfont=dict(color="#E0E6F0"))
+    fig2.update_layout(**merged_layout(400, xaxis=dict(ticksuffix="%", range=[0,115], gridcolor="#1A2A45"), coloraxis_showscale=False))
+    st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
     for color, title, text in [
-        (RED,    "Prior cancellers + OTA non-refundable cancel at ~95%",    "The two highest-risk segments cancel at 98% and 95% respectively. These are identifiable before booking confirmation."),
-        (GREEN,  "Direct repeat guests cancel at only 10–12%",              "The safest segment is also the most under-invested. Direct repeat guests cancel at 10–12% but represent only 3% of the guest base."),
+        (RED,   "Prior cancellers and OTA non-refundable bookings cancel at nearly 95%",
+                "The two highest-risk segments cancel at 98% and 95% respectively — and are identifiable before booking confirmation."),
+        (GREEN, "Direct repeat guests cancel at 10–12% but represent only 3% of the guest base",
+                "The most reliable segment is the most under-invested. Growing this segment from 3% is the highest-leverage loyalty action available."),
     ]:
         st.markdown(f"""
         <div class='insight-card' style='border-left:4px solid {color}'>
@@ -1746,28 +1879,77 @@ def render_presentation_analysis():
 
     st.markdown("""
     <div class='insight-card' style='background:linear-gradient(135deg,#160A25,#1E0F35);border:1px solid #4A1A7A;margin-top:0.5rem'>
-        <div style='font-size:13px;font-weight:700;color:#A855F7;margin-bottom:8px'>💡 Strategic Recommendation 3 — Shift acquisition toward guests who actually stay</div>
+        <div style='font-size:13px;font-weight:700;color:#A855F7;margin-bottom:8px'>
+            💡 Strategic Recommendation 3 — Shift acquisition toward guests who actually stay
+        </div>
         <div class='insight-desc'>
             • <strong>Reduce Portugal OTA spend</strong> — highest cancel rate, lowest effective revenue per booking<br>
             • <strong>Increase Germany & Belgium acquisition</strong> — most reliable markets at 20–22% cancel rate<br>
-            • <strong>Create direct repeat guest incentive</strong> (rate priority, upgrade, recognition programme) — grow the 3% base that cancels at only 10–12%
+            • <strong>Create direct repeat guest incentive</strong> (rate priority, upgrade, recognition) — grow the 3% base that cancels at only 10–12%
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("---")
 
-    # ── KEY TAKEAWAY ───────────────────────────────────────────────────
-    st.markdown('<div class="section-header">🏁 Key Takeaway</div>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class='insight-card' style='background:linear-gradient(135deg,#0A1020,#0D1A35);border:2px solid #2A3F6A;padding:1.5rem 2rem;'>
-        <div style='font-size:14px;color:#E0E6F0;line-height:2;'>
-            <span style='color:#FF5A5A;font-weight:700'>●</span> A confirmed booking is <strong>NOT</strong> confirmed revenue<br>
-            <span style='color:#FFB830;font-weight:700'>●</span> Our pricing is not applied beyond summer<br>
-            <span style='color:#A855F7;font-weight:700'>●</span> Our best guests are being ignored<br><br>
+# ==========================================================
+# TAB 5 — RECOMMENDATIONS & KEY TAKEAWAY  (slides 28–29)
+# ==========================================================
+def render_tab_recommendations():
+    st.markdown('<div class="section-header">Strategic Recommendations</div>', unsafe_allow_html=True)
+
+    recs = [
+        (GREEN,  "01", "Reduce Cancellation Revenue Loss",
+         "Flag high-risk bookings before they confirm",
+         ["Prior cancellers → mandatory deposit before confirmation",
+          "OTA non-refundable → treat as unconfirmed until deposit verified",
+          "Flag data in PMS and apply stricter deposit terms automatically"]),
+        (AMBER,  "02", "Price for Real Demand Year-Round",
+         "Reprice March–April to match real demand",
+         ["Extend dynamic pricing beyond summer — activate for Mar–Jun and Sep–Oct",
+          "Match ADR to capture rate, not season assumption",
+          "Package off-season as experience bundles, not discounts"]),
+        (PURPLE, "03", "Acquire Reliable, Retain Loyal Guest",
+         "Shift acquisition toward guests who actually stay",
+         ["Reduce Portugal OTA spend — highest cancel rate, lowest net revenue per booking",
+          "Increase Germany & Belgium acquisition — most reliable at 20–22% cancel rate",
+          "Create direct repeat guest incentive (rate, upgrade, recognition)"]),
+    ]
+
+    for color, num, objective, tagline, actions in recs:
+        action_html = "".join(f"<div style='margin-bottom:5px'>• {a}</div>" for a in actions)
+        st.markdown(f"""
+        <div class='insight-card' style='border-left:5px solid {color};margin-bottom:1rem'>
+            <div style='display:flex;align-items:center;gap:10px;margin-bottom:8px'>
+                <span style='font-size:24px;font-weight:800;color:{color}'>{num}</span>
+                <div>
+                    <div style='font-size:14px;font-weight:700;color:#E0E6F0'>{objective}</div>
+                    <div style='font-size:12px;color:{color};font-style:italic'>"{tagline}"</div>
+                </div>
+            </div>
+            <div class='insight-desc'>{action_html}</div>
         </div>
-        <div style='font-size:16px;font-weight:800;color:#22D47B;text-align:center;margin-top:0.5rem;line-height:1.6'>
-            "We are not losing to the market.<br>We are losing to our own decisions & strategy."
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown('<div class="section-header">🏁 Key Takeaway</div>', unsafe_allow_html=True)
+
+    for color, bullet, text in [
+        (RED,    "A confirmed booking is NOT confirmed revenue",    "Every booking labelled 'confirmed' or 'non-refundable' carries real cancellation risk until a deposit is physically collected."),
+        (AMBER,  "Our pricing is not applied beyond summer",        "Dynamic pricing only activates in peak season. Shoulder-season demand is real but goes unpriced."),
+        (PURPLE, "Our best guests are being ignored",               "Direct repeat guests cancel at 10–12% and represent only 3% of the base. The most reliable segment is the least invested in."),
+    ]:
+        st.markdown(f"""
+        <div class='insight-card' style='border-left:4px solid {color}'>
+            <div style='font-size:13px;font-weight:700;color:{color};margin-bottom:4px'>{bullet}</div>
+            <div class='insight-desc'>{text}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class='insight-card' style='background:linear-gradient(135deg,#0A1020,#0D1A35);border:2px solid #2A3F6A;padding:1.5rem 2rem;margin-top:1rem;text-align:center'>
+        <div style='font-size:17px;font-weight:800;color:#22D47B;line-height:1.7'>
+            "We are not losing to the market.<br>
+             We are losing to our own decisions & strategy."
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1916,21 +2098,15 @@ if filtered.empty:
 render_header(filtered, datasets, mappings)
 st.markdown("---")
 
-# Build tabs dynamically from uploaded datasets
-modules = [("📁 Overview", lambda: render_overview(filtered, datasets))]
-modules.append(("🧠 Playbook", lambda: render_adaptive_hospitality_playbook(filtered, datasets, mappings)))
-modules.append(("📅 Time Trends", lambda: render_time_trends(filtered)))
-modules.append(("💰 Revenue", lambda: render_revenue_pricing(filtered)))
-modules.append(("📉 Risk", lambda: render_booking_risk(filtered)))
-modules.append(("🌍 Market", lambda: render_market_guest(filtered)))
-modules.append(("📊 Demand", lambda: render_demand_events(filtered)))
-
-if len(datasets) > 1:
-    modules.append(("🔗 Cross-Dataset", lambda: render_cross_dataset_adaptive_analysis(filtered, datasets, mappings)))
-
-modules.append(("💡 Smart Insights", lambda: render_insights(filtered)))
-modules.append(("🧪 Data Quality", lambda: render_data_quality(filtered, datasets)))
-modules.append(("📊 Presentation Analysis", render_presentation_analysis))
+# Tabs match the 5 sections of the PowerBI presentation exactly
+modules = [
+    ("📋 Objective",                   lambda: render_tab_objective()),
+    ("🚨 Pain Point 1 — Cancellation", lambda: render_tab_cancellation(filtered)),
+    ("💰 Pain Point 2 — Pricing",      lambda: render_tab_pricing(filtered)),
+    ("🎯 Pain Point 3 — Guest Mix",    lambda: render_tab_guest_mix(filtered)),
+    ("🏁 Recommendations & Takeaway",  lambda: render_tab_recommendations()),
+    ("🧪 Data Quality",                lambda: render_data_quality(filtered, datasets)),
+]
 
 tabs = st.tabs([title for title, _ in modules])
 for tab, (_, render_func) in zip(tabs, modules):
