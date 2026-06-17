@@ -146,7 +146,7 @@ def load_data(hotel_bytes, arrivals_bytes):
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🏨 Hotel Revenue\nIntelligence")
+    st.markdown("## 🏨 Hotel Revenue Intelligence")
     st.markdown("---")
     st.markdown("### 📂 Upload Data Files")
     st.caption("Upload both Excel files to generate the analysis.")
